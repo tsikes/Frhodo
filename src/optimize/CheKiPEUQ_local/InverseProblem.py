@@ -33,8 +33,8 @@ class parameter_estimation:
     software_version = "1.0.0"
     software_unique_id = "https://doi.org/10.1002/cctc.202000953"
     software_kwargs = {"version": software_version, "author": ["Aditya Savara", "Eric A. Walker"], "doi": "https://doi.org/10.1002/cctc.202000953", "cite": "Savara, A. and Walker, E.A. (2020), CheKiPEUQ Intro 1: Bayesian Parameter Estimation Considering Uncertainty or Error from both Experiments and Theory. ChemCatChem. Accepted. doi:10.1002/cctc.202000953"} 
-    @CiteSoft.after_call_compile_consolidated_log()
-    @CiteSoft.module_call_cite(unique_id=software_unique_id, software_name=software_name, **software_kwargs)
+    #decorator CiteSoft.after_call_compile_consolidated_log()
+    #decorator CiteSoft.module_call_cite(unique_id=software_unique_id, software_name=software_name, **software_kwargs)
     def __init__(self, UserInput = None):
         #TODO: settings that are supposed to be Booleans should get Boolean cast in here. Otherwise if they are strings they will cause problems in "or" statements (where strings can return true even if the string is 'False').
         self.UserInput = UserInput #Note that this is a pointer, so the later lines are within this object.

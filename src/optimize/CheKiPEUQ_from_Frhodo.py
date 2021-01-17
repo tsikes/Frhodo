@@ -1,17 +1,23 @@
 import numpy as np
-import sys; sys.path.append('../../'); 
-sys.path.append(os.path.join(os.path.dirname(__file__) #This is so that CheKiPEUQ_local can be found properly. Otherwise there are problems importing CKPQ.parameter_estimation
-try:
-    import CheKiPEUQ as CKPQ
-    print("line 5 it is importing CheKiPEUQ!")
-except:
-    import os #The below lines are to allow CheKiPEUQ_local to be called regardless of user's working directory.
-    lenOfFileName = len(os.path.basename(__file__)) #This is the name of **this** file.
-    absPathWithoutFileName = os.path.abspath(__file__)[0:-1*lenOfFileName]
-    sys.path.append(absPathWithoutFileName)
-    import optimize.CheKiPEUQ_local as CKPQ #might need to put Frhodo.CheKiPEUQ_local or something like that.
-    # compare to C:\Users\fvs\Documents\GitHub\CheKiPEUQ\CheKiPEUQ\InverseProblem.py
+import sys; sys.path.append('../../'); import os
+sys.path.append(os.path.join(os.path.dirname(__file__))) #This is so that CheKiPEUQ_local can be found properly. Otherwise there are problems importing CKPQ.parameter_estimation
+
+# try:
+    # import CheKiPEUQ as CKPQ
+    # print("line 5 it is importing CheKiPEUQ!")
+# except:
+    # import os #The below lines are to allow CheKiPEUQ_local to be called regardless of user's working directory.
+    # lenOfFileName = len(os.path.basename(__file__)) #This is the name of **this** file.
+    # absPathWithoutFileName = os.path.abspath(__file__)[0:-1*lenOfFileName]
+    # sys.path.append(absPathWithoutFileName)
+    # import optimize.CheKiPEUQ_local as CKPQ #might need to put Frhodo.CheKiPEUQ_local or something like that.
+    # # compare to C:\Users\fvs\Documents\GitHub\CheKiPEUQ\CheKiPEUQ\InverseProblem.py
+    # print("line 14 it is in the except statement of importing CheKiPEUQ!")
     
+lenOfFileName = len(os.path.basename(__file__)) #This is the name of **this** file.
+absPathWithoutFileName = os.path.abspath(__file__)[0:-1*lenOfFileName]
+sys.path.append(absPathWithoutFileName)
+import optimize.CheKiPEUQ_local as CKPQ #might need to put Frhodo.CheKiPEUQ_local or something like that.
     
 try:
     import CiteSoft
@@ -41,8 +47,9 @@ def load_into_CheKiPUEQ(simulation_function, observed_data, pars_initial_guess =
     #sigma_multiple is how many sigma the bounds are equal to (relative to mean).
     try:
         import CheKiPEUQ.UserInput as UserInput
+        print("line 44, somehow imported CheKiPEUQ UserInput!!!")
     except:
-        import CheKiPEUQ_local.UserInput as UserInput
+        import optimize.CheKiPEUQ_local.UserInput as UserInput
     #TODO: put a "clear UserInput" type call here to UnitTesterSG_local
     UserInput.responses['responses_abscissa'] = []
     UserInput.responses['responses_observed'] = np.array(observed_data).T
