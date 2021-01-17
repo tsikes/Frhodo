@@ -1,5 +1,6 @@
 import numpy as np
 import sys; sys.path.append('../../'); 
+sys.path.append(os.path.join(os.path.dirname(__file__) #This is so that CheKiPEUQ_local can be found properly. Otherwise there are problems importing CKPQ.parameter_estimation
 try:
     import CheKiPEUQ as CKPQ
     print("line 5 it is importing CheKiPEUQ!")
