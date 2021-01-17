@@ -24,8 +24,8 @@ software_kwargs = {"version": software_version, "author": ["Aditya Savara", "Eri
 
 ##### DISABLING CITESOFT EXPORTATION FOR NOW BECAUSE IT WAS BECOMING EXPORTED TOO MANY TIMES WITH MULTI-PROCESSING EVEN WHEN ONLY AS AN IMPORT_CITE.
 #CiteSoft.import_cite(unique_id=software_unique_id, software_name=software_name, write_immediately=True, **software_kwargs)
-#@CiteSoft.after_call_compile_consolidated_log()
-#@CiteSoft.module_call_cite(unique_id=software_unique_id, software_name=software_name, **software_kwargs)
+#decorator CiteSoft.after_call_compile_consolidated_log()
+#decorator CiteSoft.module_call_cite(unique_id=software_unique_id, software_name=software_name, **software_kwargs)
 def load_into_CheKiPUEQ(simulation_function, observed_data, pars_initial_guess = [], pars_lower_bnds=[], pars_upper_bnds =[],observed_data_lower_bounds=[], observed_data_upper_bounds=[], weights_data=[], pars_uncertainty_distribution='gaussian', sigma_multiple = 3.0):
     #observed_data is an array of values of observed data (can be nested if there is more than one observable)
     #pars_lower_bnds and pars_upper_bnds are the bounds of the parameters ('coefficents') in absolute values.
