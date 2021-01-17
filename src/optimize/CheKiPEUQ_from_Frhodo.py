@@ -2,6 +2,7 @@ import numpy as np
 import sys; sys.path.append('../../'); 
 try:
     import CheKiPEUQ as CKPQ
+    print("line 5 it is importing CheKiPEUQ!")
 except:
     import optimize.CheKiPEUQ_local as CKPQ #might need to put Frhodo.CheKiPEUQ_local or something like that.
     # compare to C:\Users\fvs\Documents\GitHub\CheKiPEUQ\CheKiPEUQ\InverseProblem.py
