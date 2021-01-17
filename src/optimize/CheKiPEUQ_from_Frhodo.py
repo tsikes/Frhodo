@@ -4,6 +4,10 @@ try:
     import CheKiPEUQ as CKPQ
     print("line 5 it is importing CheKiPEUQ!")
 except:
+    import os #The below lines are to allow CheKiPEUQ_local to be called regardless of user's working directory.
+    lenOfFileName = len(os.path.basename(__file__)) #This is the name of **this** file.
+    absPathWithoutFileName = os.path.abspath(__file__)[0:-1*lenOfFileName]
+    sys.path.append(absPathWithoutFileName)
     import optimize.CheKiPEUQ_local as CKPQ #might need to put Frhodo.CheKiPEUQ_local or something like that.
     # compare to C:\Users\fvs\Documents\GitHub\CheKiPEUQ\CheKiPEUQ\InverseProblem.py
     
@@ -58,6 +62,7 @@ def load_into_CheKiPUEQ(simulation_function, observed_data, pars_initial_guess =
     UserInput.model['InputParameterPriorValues_upperBounds'] = pars_upper_bnds
     UserInput.model['InputParameterPriorValues_lowerBounds'] = pars_lower_bnds
     UserInput.model['simulateByInputParametersOnlyFunction'] = simulation_function
+    print("line 61", CKPQ.frog)
     PE_object = CKPQ.parameter_estimation(UserInput)
     return PE_object
 
