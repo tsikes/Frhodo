@@ -20,7 +20,7 @@ except:
 try:
     import UnitTesterSG.nestedObjectsFunctions as nestedObjectsFunctions
 except:
-    import CheKiPEUQ.nestedObjectsFunctionsLocal as nestedObjectsFunctions
+    import CheKiPEUQ_local.nestedObjectsFunctionsLocal as nestedObjectsFunctions
 
 class parameter_estimation:
     #Inside this class, a UserInput namespace is provided. This has dictionaries of UserInput choices.
