@@ -137,14 +137,21 @@ class Main(QMainWindow):
         
         # Check use thermo box viability
         if mechhasthermo(self.path['mech']):
-            self.use_thermo_file_box.setEnabled(True)
+            if self.thermo_select_comboBox.count() == 0:
+                self.use_thermo_file_box.setDisabled(True) # disable checkbox if no thermo in mech file
+            else:
+                self.use_thermo_file_box.setEnabled(True)
             # Autoselect checkbox off if thermo exists in mech
-            if self.sender() is None or 'use_thermo_file_box' not in self.sender().objectName(): 
-                self.use_thermo_file_box.setChecked(False)      
+            if self.sender() is None or 'use_thermo_file_box' not in self.sender().objectName():
+                self.use_thermo_file_box.blockSignals(True)           # stop set from sending signal, causing double load
+                self.use_thermo_file_box.setChecked(False)    
+                self.use_thermo_file_box.blockSignals(False)          # allow signals again
         else:
+            self.use_thermo_file_box.blockSignals(True)           # stop set from sending signal, causing double load
             self.use_thermo_file_box.setChecked(True)
+            self.use_thermo_file_box.blockSignals(False)          # allow signals again
             self.use_thermo_file_box.setDisabled(True) # disable checkbox if no thermo in mech file
-        
+
         # Enable thermo select based on use_thermo_file_box
         if self.use_thermo_file_box.isChecked():
             self.thermo_select_comboBox.setEnabled(True)

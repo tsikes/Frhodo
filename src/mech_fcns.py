@@ -298,6 +298,7 @@ class Chemical_Mechanism:
                 coeffs.append({})
                 coeffs_bnds.append({})
                 rate_bnds.append({})
+                reset_mech.append({})
 
     def set_thermo_expression_coeffs(self):         # TODO Doesn't work with NASA 9
         self.thermo_coeffs = []
@@ -374,18 +375,37 @@ class Chemical_Mechanism:
 
             self.gas.modify_species(i, S)
     
-    def reset(self, rxnIdxs=None):
+    def reset(self, rxnIdxs=None, coefNames=None):
         if rxnIdxs is None:
             rxnIdxs = range(self.gas.n_reactions)
         elif type(rxnIdxs) is not list: # if not list then assume given single rxnIdx
             rxnIdxs = [rxnIdxs]
+        
+        # if not list then assume given single coefficient
+        # if Arrhenius, expects list of coefficients. If Plog or Falloff expected [['high_rate', 'activation_energy'], ...]
+        if coefNames is not None and type(coefNames) is not list:
+            coefNames = [coefNames]
 
         prior_coeffs = deepcopy(self.coeffs)
         for rxnIdx in rxnIdxs:
-            if 'Arrhenius' == self.reset_mech[rxnIdx]['rxnType']:
-                for coefName, coefVal in self.reset_mech[rxnIdx]['rxnCoeffs'].items():
-                    self.coeffs[rxnIdx][coefName] = coefVal                    
-        
+            if coefNames is None:   # resets all coefficients in rxn
+                self.coeffs[rxnIdx] = self.reset_mech[rxnIdx]['rxnCoeffs']
+            
+            elif 'Arrhenius' == self.reset_mech[rxnIdx]['rxnType']:
+                for coefName in coefNames:
+                    self.coeffs[rxnIdx][coefName] = self.reset_mech[rxnIdx]['rxnCoeffs'][coefName]
+
+            elif 'Plog Reaction' == self.reset_mech[rxnIdx]['rxnType']:
+                for [limit_type, coefName] in coefNames:
+                    if limit_type == 'low_rate':
+                        self.coeffs[rxnIdx][0][coefName] = self.reset_mech[rxnIdx]['rxnCoeffs'][0][coefName]
+                    elif limit_type == 'high_rate':
+                        self.coeffs[rxnIdx][-1][coefName] = self.reset_mech[rxnIdx]['rxnCoeffs'][-1][coefName]
+
+            elif 'Falloff Reaction' == self.reset_mech[rxnIdx]['rxnType']:
+                for [limit_type, coefName] in coefNames:
+                    self.coeffs[rxnIdx][limit_type][coefName] = self.reset_mech[rxnIdx]['rxnCoeffs'][limit_type][coefName]
+
         self.modify_reactions(self.coeffs)
 
         return prior_coeffs
@@ -395,16 +415,19 @@ class Chemical_Mechanism:
         if T <= 0 or np.isnan(T):
             output['message'].append('Error: Temperature is invalid')
             return output
-        if P <= 0 or np.isnan(P):
+
+        elif P <= 0 or np.isnan(P):
             output['message'].append('Error: Pressure is invalid')
             return output
-        if len(X) > 0:
+
+        elif len(X) > 0:
             for species in X:
                 if species not in self.gas.species_names:
                     output['message'].append('Species: {:s} is not in the mechanism'.format(species))
                     return output
             
             self.gas.TPX = T, P, X
+
         else:
             self.gas.TP = T, P
             
