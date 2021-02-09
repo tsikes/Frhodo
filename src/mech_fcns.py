@@ -249,19 +249,38 @@ class Chemical_Mechanism:
         coeffs_bnds = []
         rate_bnds = []
         for rxnNum, rxn in enumerate(self.gas.reactions()):
-            if hasattr(rxn, 'rate'):
+            if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 attrs = [p for p in dir(rxn.rate) if not p.startswith('_')] # attributes not including __              
                 coeffs.append({attr: getattr(rxn.rate, attr) for attr in attrs})
-                coeffs_bnds.append({attr: {'resetVal': getattr(rxn.rate, attr), 
-                                           'value': np.nan, 'type': 'F'} for attr in attrs})
+                
+                coeffs_bnds.append({attr: {'resetVal': getattr(rxn.rate, attr), 'value': np.nan, 'type': 'F'} for attr in attrs})
                 for coef_name in coeffs_bnds[-1].keys():
-                    coeffs_bnds[-1][coef_name]['limits'] = Uncertainty('coef', rxnNum, 
-                                                                       coef_name=coef_name, coeffs_bnds=coeffs_bnds)
+                    coeffs_bnds[-1][coef_name]['limits'] = Uncertainty('coef', rxnNum, coef_name=coef_name, coeffs_bnds=coeffs_bnds)
                 
                 rate_bnds.append({'value': np.nan, 'limits': None, 'type': 'F', 'opt': False})
                 rate_bnds[-1]['limits'] = Uncertainty('rate', rxnNum, rate_bnds=rate_bnds)
-            #elif hasattr(rxn, 'rates'):
-            #    print(rxn.rates[0])
+                
+            elif type(rxn) is ct.PlogReaction:
+                for n, rate in enumerate(rxn.rates):
+                    attrs = [p for p in dir(rate[1]) if not p.startswith('_')] # attributes not including __     
+                    if n == 0:  
+                        coeffs.append({attr: getattr(rate[1], attr) for attr in attrs})
+
+                        coeffs_bnds.append({attr: {'resetVal': getattr(rate[1], attr), 'value': np.nan, 'type': 'F'} for attr in attrs})
+                        for coef_name in coeffs_bnds[-1].keys():
+                            coeffs_bnds[-1][coef_name]['limits'] = Uncertainty('coef', rxnNum, coef_name=coef_name, coeffs_bnds=coeffs_bnds)
+            
+                        rate_bnds.append({'value': np.nan, 'limits': None, 'type': 'F', 'opt': False})
+                        rate_bnds[-1]['limits'] = Uncertainty('rate', rxnNum, rate_bnds=rate_bnds)
+                    else:
+                        pass
+
+                if rxnNum == 1:
+                    print(coeffs)
+            elif type(rxn) is ct.FalloffReaction:
+                coeffs.append({})
+                coeffs_bnds.append({})
+                rate_bnds.append({})
             else:
                 coeffs.append({})
                 coeffs_bnds.append({})
@@ -297,7 +316,7 @@ class Chemical_Mechanism:
         for rxnNum in rxnNums:
             rxn = self.gas.reaction(rxnNum)
             rxnChanged = False
-            if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction:
+            if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 for coefName in ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']:
                     if coeffs[rxnNum][coefName] != eval(f'rxn.rate.{coefName}'):
                         rxnChanged = True
@@ -384,13 +403,13 @@ class Uncertainty: # alternate name: why I hate pickle part 10
         elif uncType == 'F':
             return np.sort([x/uncVal, x*uncVal])
         elif uncType == '%':
-            return np.sort([x/(1+uncVal), x*(1+uncVal)])
+            return np.sort([x/(1 + uncVal), x*(1 + uncVal)])
         elif uncType == '±':
-            return np.sort([x-uncVal, x+uncVal])
+            return np.sort([x - uncVal, x + uncVal])
         elif uncType == '+':
-            return np.sort([x, x+uncVal])
+            return np.sort([x, x + uncVal])
         elif uncType == '-':
-            return np.sort([x-uncVal, x])
+            return np.sort([x - uncVal, x])
 
     def __call__(self, x=None):
         if self.unc_type == 'rate':
