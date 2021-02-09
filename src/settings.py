@@ -861,18 +861,8 @@ class series:
         mech.set_TPX(shock['T_reactor'], shock['P_reactor'], shock['thermo_mix'])
             
         # reset mech back to reset values
-        coefVals = []
-        for rxnIdx in range(mech.gas.n_reactions):
-            coefVal = {}
-            for coefName in mech.coeffs[rxnIdx].keys():
-                coefVal[coefName] = deepcopy(mech.coeffs[rxnIdx][coefName])
-                resetVal = mech.coeffs_bnds[rxnIdx][coefName]['resetVal']
-                mech.coeffs[rxnIdx][coefName] = resetVal 
-            
-            coefVals.append(coefVal)
-            
-        mech.modify_reactions(mech.coeffs)
-        
+        prior_mech = mech.reset()  # reset mechanism and get mech that it was
+                
         # Get reset rates and rate bounds
         shock['rate_reset_val'] = []
         shock['rate_bnds'] = []
@@ -883,14 +873,12 @@ class series:
                 rate_bnds = mech.rate_bnds[rxnIdx]['limits'](resetVal)
                 shock['rate_bnds'].append(rate_bnds)
                 
-                # reset coeffs to prior values
-                for coefName in mech.coeffs[rxnIdx].keys():
-                    mech.coeffs[rxnIdx][coefName] = coefVals[rxnIdx][coefName]
-            
             else:   # skip if not Arrhenius type
                 shock['rate_reset_val'].append(np.nan)
                 shock['rate_bnds'].append([np.nan, np.nan])
         
+        # set mech to prior mech
+        mech.coeffs = prior_mech
         mech.modify_reactions(mech.coeffs)
     
     def set_coef_reset(self, rxnIdx, coefName):

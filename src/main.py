@@ -40,7 +40,7 @@ path['appdata'].mkdir(parents=True, exist_ok=True) # Make path if it doesn't exi
 shut_down = {'bool': False}
 
 class Main(QMainWindow):
-    def __init__(self, path, app):
+    def __init__(self, app, path):
         super().__init__()
         self.app = app
         self.path_set = settings.Path(self, path)
@@ -287,10 +287,10 @@ class Main(QMainWindow):
 if __name__ == '__main__':
     if platform.system() == 'Windows':  # this is required for pyinstaller on windows
         multiprocessing.freeze_support()
-
-    sys.excepthook = error_window.excepthookDecorator(path, shut_down)
     
     app = QApplication(sys.argv)
-    main = Main(path, app)
+    sys.excepthook = error_window.excepthookDecorator(app, path, shut_down)
+
+    main = Main(app, path)
     sys.exit(app.exec_())
    

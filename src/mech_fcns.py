@@ -3,6 +3,7 @@
 # directory for license and copyright information.
 
 import os, io, stat, contextlib, pathlib, time
+from copy import deepcopy
 import cantera as ct
 from cantera import interrupts, cti2yaml#, ck2yaml, ctml2yaml
 import numpy as np
@@ -245,51 +246,59 @@ class Chemical_Mechanism:
     def gas(self): return self.gas       
     
     def set_rate_expression_coeffs(self):
-        coeffs = []
-        coeffs_bnds = []
-        rate_bnds = []
+        self.coeffs = coeffs = []
+        self.reset_mech = reset_mech = []
+        self.coeffs_bnds = coeffs_bnds = []
+        self.rate_bnds = rate_bnds = []
         for rxnNum, rxn in enumerate(self.gas.reactions()):
+            rate_bnds.append({'value': np.nan, 'limits': Uncertainty('rate', rxnNum, rate_bnds=rate_bnds), 'type': 'F', 'opt': False})
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 attrs = [p for p in dir(rxn.rate) if not p.startswith('_')] # attributes not including __              
                 coeffs.append({attr: getattr(rxn.rate, attr) for attr in attrs})
-                
-                coeffs_bnds.append({attr: {'resetVal': getattr(rxn.rate, attr), 'value': np.nan, 'type': 'F'} for attr in attrs})
-                for coef_name in coeffs_bnds[-1].keys():
-                    coeffs_bnds[-1][coef_name]['limits'] = Uncertainty('coef', rxnNum, coef_name=coef_name, coeffs_bnds=coeffs_bnds)
-                
-                rate_bnds.append({'value': np.nan, 'limits': None, 'type': 'F', 'opt': False})
-                rate_bnds[-1]['limits'] = Uncertainty('rate', rxnNum, rate_bnds=rate_bnds)
+                coeffs_bnds.append({attr: {'resetVal': coeffs[-1][attr], 'value': np.nan, 
+                                           'limits': Uncertainty('coef', rxnNum, coef_name=attr, coeffs_bnds=coeffs_bnds),
+                                           'type': 'F'} for attr in attrs})
+
+                reset_mech.append({'rxnType': 'Arrhenius', 'rxnCoeffs': deepcopy(coeffs[-1])})
                 
             elif type(rxn) is ct.PlogReaction:
-                for n, rate in enumerate(rxn.rates):
-                    attrs = [p for p in dir(rate[1]) if not p.startswith('_')] # attributes not including __     
-                    if n == 0:  
-                        coeffs.append({attr: getattr(rate[1], attr) for attr in attrs})
-
-                        coeffs_bnds.append({attr: {'resetVal': getattr(rate[1], attr), 'value': np.nan, 'type': 'F'} for attr in attrs})
-                        for coef_name in coeffs_bnds[-1].keys():
-                            coeffs_bnds[-1][coef_name]['limits'] = Uncertainty('coef', rxnNum, coef_name=coef_name, coeffs_bnds=coeffs_bnds)
-            
-                        rate_bnds.append({'value': np.nan, 'limits': None, 'type': 'F', 'opt': False})
-                        rate_bnds[-1]['limits'] = Uncertainty('rate', rxnNum, rate_bnds=rate_bnds)
-                    else:
-                        pass
-
-                if rxnNum == 1:
-                    print(coeffs)
-            elif type(rxn) is ct.FalloffReaction:
-                coeffs.append({})
+                coeffs.append([])
                 coeffs_bnds.append({})
-                rate_bnds.append({})
+                for n, rate in enumerate(rxn.rates):
+                    attrs = [p for p in dir(rate[1]) if not p.startswith('_')] # attributes not including __
+                    coeffs[-1].append({'Pressure': rate[0]})
+                    coeffs[-1][-1].update({attr: getattr(rate[1], attr) for attr in attrs})
+                    if n == 0 or n == len(rxn.rates)-1: # only going to allow coefficient uncertainties to be placed on upper and lower pressures
+                        if n == 0:
+                            key = 'low_rate'
+                        else:
+                            key = 'high_rate'
+                        coeffs_bnds[-1][key] = [{attr: {'resetVal': coeffs[-1][-1][attr], 'value': np.nan, 
+                                                        'limits': Uncertainty('coef', rxnNum, coef_name=attr, coeffs_bnds=coeffs_bnds),
+                                                        'type': 'F'} for attr in attrs}]
+
+                reset_mech.append({'rxnType': 'Plog Reaction', 'rxnCoeffs': deepcopy(coeffs[-1])})
+
+            elif type(rxn) is ct.FalloffReaction:
+                coeffs_bnds.append({})
+                coeffs.append({'falloff_type': rxn.falloff.type, 'high_rate': [], 'low_rate': [], 'falloff_parameters': rxn.falloff.parameters, 
+                               'default_efficiency': rxn.default_efficiency, 'efficiencies': rxn.efficiencies})
+                for key in ['low_rate', 'high_rate']:
+                    rate = getattr(rxn, key)
+                    attrs = [p for p in dir(rate) if not p.startswith('_')] # attributes not including __
+                    coeffs[-1][key] = {attr: getattr(rate, attr) for attr in attrs}
+
+                    coeffs_bnds[-1][key] = [{attr: {'resetVal': coeffs[-1][key][attr], 'value': np.nan, 
+                                                    'limits': Uncertainty('coef', rxnNum, coef_name=attr, coeffs_bnds=coeffs_bnds),
+                                                    'type': 'F'} for attr in attrs}]
+                    
+                reset_mech.append({'rxnType': 'Falloff Reaction', 'rxnCoeffs': deepcopy(coeffs[-1])})
+                
             else:
                 coeffs.append({})
                 coeffs_bnds.append({})
                 rate_bnds.append({})
 
-        self.coeffs = coeffs
-        self.coeffs_bnds = coeffs_bnds
-        self.rate_bnds = rate_bnds
-    
     def set_thermo_expression_coeffs(self):         # TODO Doesn't work with NASA 9
         self.thermo_coeffs = []
         for i in range(self.gas.n_species):
@@ -365,6 +374,22 @@ class Chemical_Mechanism:
 
             self.gas.modify_species(i, S)
     
+    def reset(self, rxnIdxs=None):
+        if rxnIdxs is None:
+            rxnIdxs = range(self.gas.n_reactions)
+        elif type(rxnIdxs) is not list: # if not list then assume given single rxnIdx
+            rxnIdxs = [rxnIdxs]
+
+        prior_coeffs = deepcopy(self.coeffs)
+        for rxnIdx in rxnIdxs:
+            if 'Arrhenius' == self.reset_mech[rxnIdx]['rxnType']:
+                for coefName, coefVal in self.reset_mech[rxnIdx]['rxnCoeffs'].items():
+                    self.coeffs[rxnIdx][coefName] = coefVal                    
+        
+        self.modify_reactions(self.coeffs)
+
+        return prior_coeffs
+
     def set_TPX(self, T, P, X=[]):
         output = {'success': False, 'message': []}
         if T <= 0 or np.isnan(T):
@@ -397,7 +422,7 @@ class Uncertainty: # alternate name: why I hate pickle part 10
         self.rxnNum = rxnNum
         self.unc_dict = kwargs
     
-    def unc_fcn(self, x, uncVal, uncType): # uncertainty function
+    def _unc_fcn(self, x, uncVal, uncType): # uncertainty function
         if np.isnan(uncVal):
             return [np.nan, np.nan]
         elif uncType == 'F':
@@ -418,7 +443,7 @@ class Uncertainty: # alternate name: why I hate pickle part 10
             rate_bnds = self.unc_dict['rate_bnds']
             unc_value = rate_bnds[self.rxnNum]['value']
             unc_type = rate_bnds[self.rxnNum]['type']
-            return self.unc_fcn(x, unc_value, unc_type)
+            return self._unc_fcn(x, unc_value, unc_type)
         else:
             coeffs_bnds = self.unc_dict['coeffs_bnds']
             coefName = self.unc_dict['coef_name']
@@ -426,7 +451,7 @@ class Uncertainty: # alternate name: why I hate pickle part 10
             coef_val = coef_dict['resetVal']
             unc_value = coef_dict['value']
             unc_type = coef_dict['type']
-            return self.unc_fcn(coef_val, unc_value, unc_type)
+            return self._unc_fcn(coef_val, unc_value, unc_type)
   
 
 class Reactor:

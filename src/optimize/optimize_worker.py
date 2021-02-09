@@ -59,14 +59,7 @@ class Worker(QRunnable):
         
         mech = self.mech
 
-        # reset mechanism
-        initial_mech = deepcopy(mech.coeffs)
-        for rxnIdx in range(mech.gas.n_reactions):
-            for coefName in mech.coeffs[rxnIdx].keys():
-                resetVal = mech.coeffs_bnds[rxnIdx][coefName]['resetVal']
-                mech.coeffs[rxnIdx][coefName] = resetVal 
-        
-        mech.modify_reactions(mech.coeffs)
+        prior_mech = mech.reset()  # reset mechanism
         
         # Calculate x0
         self.x0 = rates()
@@ -96,7 +89,7 @@ class Worker(QRunnable):
         self.bnds = {'lower': np.array(lb), 'upper': np.array(ub)}
 
         # Calculate initial rate scalers
-        mech.coeffs = initial_mech
+        mech.coeffs = prior_mech
         mech.modify_reactions(mech.coeffs)
         self.s = np.divide(rates(), self.x0)
 

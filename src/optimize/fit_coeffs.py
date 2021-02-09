@@ -12,6 +12,8 @@ from timeit import default_timer as timer
 Ru = ct.gas_constant
 # Ru = 1.98720425864083
 
+# initial guesses for Troe = [0.6, 200, 2000, 6000]
+
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 
 def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[]):
