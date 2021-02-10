@@ -867,7 +867,7 @@ class series:
         shock['rate_reset_val'] = []
         shock['rate_bnds'] = []
         for rxnIdx in range(mech.gas.n_reactions):
-            if 'Arrhenius' in self.parent.mech_tree.rxn[rxnIdx]['rxnType']:
+            if self.parent.mech_tree.rxn[rxnIdx]['rxnType'] in ['Arrhenius', 'Plog Reaction', 'Falloff Reaction']:
                 resetVal = mech.gas.forward_rate_constants[rxnIdx]
                 shock['rate_reset_val'].append(resetVal)
                 rate_bnds = mech.rate_bnds[rxnIdx]['limits'](resetVal)

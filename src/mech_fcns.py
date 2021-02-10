@@ -254,10 +254,10 @@ class Chemical_Mechanism:
             rate_bnds.append({'value': np.nan, 'limits': Uncertainty('rate', rxnNum, rate_bnds=rate_bnds), 'type': 'F', 'opt': False})
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 attrs = [p for p in dir(rxn.rate) if not p.startswith('_')] # attributes not including __              
-                coeffs.append({attr: getattr(rxn.rate, attr) for attr in attrs})
-                coeffs_bnds.append({attr: {'resetVal': coeffs[-1][attr], 'value': np.nan, 
-                                           'limits': Uncertainty('coef', rxnNum, coef_name=attr, coeffs_bnds=coeffs_bnds),
-                                           'type': 'F'} for attr in attrs})
+                coeffs.append([{attr: getattr(rxn.rate, attr) for attr in attrs}])
+                coeffs_bnds.append({'rate': {attr: {'resetVal': coeffs[-1][0][attr], 'value': np.nan, 
+                                           'limits': Uncertainty('coef', rxnNum, key='rate', coef_name=attr, coeffs_bnds=coeffs_bnds),
+                                           'type': 'F'} for attr in attrs}})
 
                 reset_mech.append({'rxnType': 'Arrhenius', 'rxnCoeffs': deepcopy(coeffs[-1])})
                 
@@ -328,13 +328,13 @@ class Chemical_Mechanism:
             rxnChanged = False
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 for coefName in ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']:
-                    if coeffs[rxnNum][coefName] != eval(f'rxn.rate.{coefName}'):
+                    if coeffs[rxnNum][0][coefName] != eval(f'rxn.rate.{coefName}'):
                         rxnChanged = True
                 
                 if rxnChanged:          # Update reaction rate
-                    A = coeffs[rxnNum]['pre_exponential_factor']
-                    b = coeffs[rxnNum]['temperature_exponent']
-                    Ea = coeffs[rxnNum]['activation_energy']
+                    A = coeffs[rxnNum][0]['pre_exponential_factor']
+                    b = coeffs[rxnNum][0]['temperature_exponent']
+                    Ea = coeffs[rxnNum][0]['activation_energy']
                     rxn.rate = ct.Arrhenius(A, b, Ea)
             # elif type(rxn) is ct.PlogReaction:
                 # print(dir(rxn))
