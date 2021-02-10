@@ -80,48 +80,50 @@ class Tree(QtCore.QObject):
         self._set_mech_tree(self.mech_tree_data)
 
     def _set_mech_tree_data(self, selection, mech):
+        def get_coef_abbreviation(coefName):
+            if 'activation_energy' == coefName:
+                return 'Ea'
+            elif 'pre_exponential_factor' == coefName:
+                return 'A'
+            elif 'temperature_exponent' == coefName:
+                return 'n'
+
         parent = self.parent()
         data = []
-        for i, rxn in enumerate(mech.gas.reactions()):
-            if hasattr(rxn, 'rate'):
-                attrs = [p for p in dir(rxn.rate) if not p.startswith('_')] # attributes not including __
-                
-                # Setup Coeffs for Mech
-                temp = {}
-                for attr in attrs:
-                    temp[attr] = getattr(rxn.rate, attr)
-                
-                # Setup Coeffs for Tree
-                coeffs = []
-                coeffs_order = []
-                for n, attr in enumerate(attrs):
-                    if 'activation_energy' in attr:
-                        attr_short = 'Ea'
-                    elif 'pre_exponential_factor' in attr:
-                        attr_short = 'A'
-                    elif 'temperature_exponent' in attr:
-                        attr_short = 'n'
-                    else:
-                        attr_short = attr_name
-                    
-                    coeffs.append([attr_short, attr, getattr(rxn.rate, attr)])
-                    coeffs_order.append(n)
+        for rxnIdx, rxn in enumerate(mech.gas.reactions()):
+            rxn_type = rxn.__class__.__name__.replace('Reaction', ' Reaction')
+            if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
+                coeffs = [] # Setup Coeffs for Tree
+                for coefName, coefVal in mech.coeffs[rxnIdx].items():
+                    coefAbbr = get_coef_abbreviation(coefName)
+                    coeffs.append([coefAbbr, coefName, mech.coeffs[rxnIdx]])
                       
-                if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction:
-                    # Reorder coeffs into A, n, Ea
-                    coeffs_order = [1, 2, 0]
-                    
-                    #if 'Bilbo' in selection:
-                    #    coeffs = self.convert._arrhenius(i, coeffs, 'Cantera2Bilbo')
-                    #elif 'Chemkin' in selection:
-                    #    coeffs = self.convert._arrhenius(i, coeffs, 'Cantera2Chemkin')
-                  
-                    data.append({'num': i, 'eqn': rxn.equation, 'type': 'Arrhenius', 
-                            'coeffs': coeffs, 'coeffs_order': coeffs_order})
-                
+                coeffs_order = [1, 2, 0] # Reorder coeffs into A, n, Ea
+   
+                data.append({'num': rxnIdx, 'eqn': rxn.equation, 'type': 'Arrhenius', 
+                             'coeffs': coeffs, 'coeffs_order': coeffs_order})
+            elif type(rxn) in [ct.PlogReaction, ct.FalloffReaction]:
+                coeffs = []
+                for key in ['high', 'low']:
+                    if type(rxn) is ct.PlogReaction:
+                        if key == 'high':
+                            n = len(mech.coeffs[rxnIdx]) - 1
+                        else:
+                            n = 0
+                    else:
+                        n = f'{key}_rate'
+
+                    for coefName, coefVal in mech.coeffs[rxnIdx][n].items():
+                        if coefName == 'Pressure': continue # skip pressure
+                        coefAbbr = get_coef_abbreviation(coefName)                   
+                        coeffs.append([f'{coefAbbr}_{key}', coefName, mech.coeffs[rxnIdx][n]])
+
+                coeffs_order = [1, 2, 0, 4, 5, 3] # Reorder coeffs into A_high, n_high, Ea_high, A_low
+
+                data.append({'num': rxnIdx, 'eqn': rxn.equation, 'type': rxn_type, 
+                             'coeffs': coeffs, 'coeffs_order': coeffs_order}) 
             else:
-                rxn_type = rxn.__class__.__name__.replace('Reaction', ' Reaction')
-                data.append({'num': i, 'eqn': rxn.equation, 'type': rxn_type})
+                data.append({'num': rxnIdx, 'eqn': rxn.equation, 'type': rxn_type})
                 # raise Exception("Equation type is not currently implemented for:\n{:s}".format(rxn.equation))
             
         return data                
@@ -198,7 +200,7 @@ class Tree(QtCore.QObject):
         # clear rows of qstandarditem (L1)
         L1.removeRows(0, L1.rowCount())
 
-        if rxn['type'] in 'Arrhenius':
+        if rxn['type'] in ['Arrhenius', 'Plog Reaction', 'Falloff Reaction']:
             widget = set_rate_widget(unc={'type': parent.mech.rate_bnds[rxnNum]['type'],
                                           'value': parent.mech.rate_bnds[rxnNum]['value']})
             widget.uncValBox.valueChanged.connect(self.update_uncertainties)       # no update between F and %
@@ -210,17 +212,26 @@ class Tree(QtCore.QObject):
             
             for coefNum in rxn['coeffs_order']:
                 # convert mech coeffs to display units
-                coef = rxn['coeffs'][coefNum]
-                coef[2] = parent.mech.coeffs[rxnNum][coef[1]]
+                coef = deepcopy(rxn['coeffs'][coefNum])
+                coef[2] = coef[2][coef[1]]  # get current value
                 conv_type = f'Cantera2{self.mech_tree_type}'
                 coef = self.convert._arrhenius(rxnNum, [coef], conv_type)[0]
 
-                unc_type = parent.mech.coeffs_bnds[rxnNum][coef[1]]['type']
-                unc_value = parent.mech.coeffs_bnds[rxnNum][coef[1]]['value']
+                if rxn['type'] == 'Arrhenius':
+                    unc_type = parent.mech.coeffs_bnds[rxnNum][coef[1]]['type']
+                    unc_value = parent.mech.coeffs_bnds[rxnNum][coef[1]]['value']
+                elif rxn['type'] in ['Plog Reaction', 'Falloff Reaction']:
+                    if 'high' in coef[0]:
+                        unc_type = parent.mech.coeffs_bnds[rxnNum]['high_rate'][coef[1]]['type']
+                        unc_value = parent.mech.coeffs_bnds[rxnNum]['high_rate'][coef[1]]['value']
+                    elif 'low' in coef[0]:
+                        unc_type = parent.mech.coeffs_bnds[rxnNum]['low_rate'][coef[1]]['type']
+                        unc_value = parent.mech.coeffs_bnds[rxnNum]['low_rate'][coef[1]]['value']
+
                 if unc_type not in ['F', '%']:
                     unc_value = self.convert._arrhenius(rxnNum, [[*coef[:2], unc_value]], conv_type)[0][2]
 
-                info = {'type': type, 'rxnNum': rxn['num'], 'coefNum': coefNum, 'label': '',
+                info = {'type': rxn['type'], 'rxnNum': rxn['num'], 'coefNum': coefNum, 'label': '',
                         'coef': coef[0:2], 'coefAbbr': coef[0], 'coefName': coef[1], 'coefVal': coef[2]}
 
                 widget = rateExpCoefficient(parent, coef, info, unc_type=unc_type, unc_value=unc_value)
@@ -244,15 +255,6 @@ class Tree(QtCore.QObject):
                 L1.appendRow([L1.info['row'][-1]['item']])
                 mIndex = self.proxy_model.mapFromSource(L1.info['row'][-1]['item'].index())
                 tree.setIndexWidget(mIndex, L1.info['row'][-1]['widget'])
-        
-        elif rxn['type'] in ['Plog Reaction', 'Falloff Reaction']:
-            widget = set_rate_widget(unc={'type': parent.mech.rate_bnds[rxnNum]['type'],
-                                          'value': parent.mech.rate_bnds[rxnNum]['value']})
-            widget.uncValBox.valueChanged.connect(self.update_uncertainties)       # no update between F and %
-
-            tree.rxn[rxnNum].update({'coef': rxn['coeffs'], 'rateBox': widget.valueBox, 
-                                     'formulaBox': [None], 'valueBox': [None], 
-                                     'uncBox': [widget.uncValBox]})
 
         else:   # if not Arrhenius, show rate only
             widget = set_rate_widget()
@@ -395,8 +397,17 @@ class Tree(QtCore.QObject):
             
             rxnNum = sender.info['rxnNum']
             if 'coefName' in sender.info: # this means the coef unc was changed
-                coefNum, coefName = sender.info['coefNum'], sender.info['coefName'], 
-                coefUncDict = mech.coeffs_bnds[rxnNum][coefName]
+                coefNum, coefName, coefAbbr = sender.info['coefNum'], sender.info['coefName'], sender.info['coefAbbr']
+                
+                # get correct uncertainty diction based on reaction type
+                if sender.info['type'] == 'Arrhenius':
+                    coefUncDict = mech.coeffs_bnds[rxnNum][coefName]
+                elif sender.info['type'] in ['Plog Reaction', 'Falloff Reaction']:
+                    if 'high' in sender.info['coefAbbr']:
+                        coefUncDict = mech.coeffs_bnds[rxnNum]['high_rate'][coefName]
+                    elif 'low' in sender.info['coefAbbr']:
+                        coefUncDict = mech.coeffs_bnds[rxnNum]['low_rate'][coefName]
+
                 uncBox = parent.mech_tree.rxn[rxnNum]['uncBox'][coefNum+1]
                 
                 coefUncDict['value'] = uncVal = uncBox.uncValue
@@ -408,7 +419,19 @@ class Tree(QtCore.QObject):
                     coefUncDict['opt'] = False                    
                 
                 # update values if they now lie outside limits
-                coefValue = mech.coeffs[rxnNum][coefName] 
+                if sender.info['type'] == 'Arrhenius':
+                    coefValue = mech.coeffs[rxnNum][coefName]
+                elif sender.info['type'] in ['Plog Reaction', 'Falloff Reaction']:
+                    if sender.info['type'] == 'Plog Reaction':
+                        if 'high' in sender.info['coefAbbr']:
+                            n = len(mech.coeffs[sender.info['rxnNum']]) - 1
+                        else:
+                            n = 0
+                    else:
+                        n = f'{key}_rate'
+
+                    coefValue = mech.coeffs[rxnNum][n][coefName]
+
                 if coefValue < limits[0] or coefValue > limits[1]:
                     coefBox = parent.mech_tree.rxn[rxnNum]['valueBox'][coefNum]
                     coefBox.valueChanged.emit(coefBox.value())
@@ -465,7 +488,7 @@ class Tree(QtCore.QObject):
         parent.mech.modify_reactions(parent.mech.coeffs)
         self.update_rates()
     
-    def update_mech_reset_value(self, event):
+    def update_mech_reset_value(self, event):   # TODO WHEN BOXES ARE CREATED UNCERTAINTIES ARE BEING CALLED TWICE
         parent = self.parent()
         sender = self.sender()
         rxnNum, coefNum, coefName = sender.info['rxnNum'], sender.info['coefNum'], sender.info['coefName']
@@ -491,10 +514,8 @@ class Tree(QtCore.QObject):
 
         for rxnNum in rxnNumRange:
             rxn = parent.mech_tree.rxn[rxnNum]
-            if ('Arrhenius' not in rxn['rxnType'] 
-                or 'valueBox' not in rxn): continue
-            
-                
+            if (rxn['rxnType'] not in ['Arrhenius', 'Plog Reaction', 'Falloff Reaction'] or 'valueBox' not in rxn): continue
+ 
             valBoxes = parent.mech_tree.rxn[rxnNum]['valueBox']
             for n, valBox in enumerate(valBoxes):    # update value boxes
                 coefName = valBox.info['coefName']

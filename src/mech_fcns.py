@@ -273,9 +273,9 @@ class Chemical_Mechanism:
                             key = 'low_rate'
                         else:
                             key = 'high_rate'
-                        coeffs_bnds[-1][key] = [{attr: {'resetVal': coeffs[-1][-1][attr], 'value': np.nan, 
-                                                        'limits': Uncertainty('coef', rxnNum, coef_name=attr, coeffs_bnds=coeffs_bnds),
-                                                        'type': 'F'} for attr in attrs}]
+                        coeffs_bnds[-1][key] = {attr: {'resetVal': coeffs[-1][-1][attr], 'value': np.nan, 
+                                                        'limits': Uncertainty('coef', rxnNum, key=key, coef_name=attr, coeffs_bnds=coeffs_bnds),
+                                                        'type': 'F'} for attr in attrs}
 
                 reset_mech.append({'rxnType': 'Plog Reaction', 'rxnCoeffs': deepcopy(coeffs[-1])})
 
@@ -288,9 +288,9 @@ class Chemical_Mechanism:
                     attrs = [p for p in dir(rate) if not p.startswith('_')] # attributes not including __
                     coeffs[-1][key] = {attr: getattr(rate, attr) for attr in attrs}
 
-                    coeffs_bnds[-1][key] = [{attr: {'resetVal': coeffs[-1][key][attr], 'value': np.nan, 
-                                                    'limits': Uncertainty('coef', rxnNum, coef_name=attr, coeffs_bnds=coeffs_bnds),
-                                                    'type': 'F'} for attr in attrs}]
+                    coeffs_bnds[-1][key] = {attr: {'resetVal': coeffs[-1][key][attr], 'value': np.nan, 
+                                                    'limits': Uncertainty('coef', rxnNum, key=key, coef_name=attr, coeffs_bnds=coeffs_bnds),
+                                                    'type': 'F'} for attr in attrs}
                     
                 reset_mech.append({'rxnType': 'Falloff Reaction', 'rxnCoeffs': deepcopy(coeffs[-1])})
                 
@@ -469,8 +469,14 @@ class Uncertainty: # alternate name: why I hate pickle part 10
             return self._unc_fcn(x, unc_value, unc_type)
         else:
             coeffs_bnds = self.unc_dict['coeffs_bnds']
-            coefName = self.unc_dict['coef_name']
-            coef_dict = coeffs_bnds[self.rxnNum][coefName]
+            if 'key' not in self.unc_dict: # is Arrhenius
+                coefName = self.unc_dict['coef_name']
+                coef_dict = coeffs_bnds[self.rxnNum][coefName]
+            else:   # is a Plog or Falloff and requires key to get to dict
+                key = self.unc_dict['key']
+                coefName = self.unc_dict['coef_name']
+                coef_dict = coeffs_bnds[self.rxnNum][key][coefName]
+            
             coef_val = coef_dict['resetVal']
             unc_value = coef_dict['value']
             unc_type = coef_dict['type']

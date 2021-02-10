@@ -62,9 +62,9 @@ class Convert_Units:
         for coef in coeffs: # coef of format [coef_name, coef_abbreviation, coef_value]
             if 'pre_exponential_factor' in coef:
                 if 'Cantera2Bilbo' in conv_type:
-                    coef[0] = 'log(A)'          # Corrects shorthand
+                    coef[0] = f'log({coef[0]})'          # Corrects shorthand
                 else:
-                    coef[0] = 'A'          # Corrects shorthand
+                    coef[0] = coef[0].replace('log(', '').replace(')', '')          # Corrects shorthand
                 with np.errstate(over='raise'):
                     try:
                         coef[2] = conv_factor[conv_type]['A'](coef[2])
