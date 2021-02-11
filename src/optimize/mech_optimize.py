@@ -159,14 +159,17 @@ class Multithread_Optimize:
     def _set_coef_opt(self):                   
         mech = self.parent.mech
         coef_opt = []
-        for rxnIdx in range(mech.gas.n_reactions):      # searches all rxns
+        #for rxnIdx in range(mech.gas.n_reactions):      # searches all rxns
+        for rxnIdx, rxn in enumerate(mech.gas.reactions()):      # searches all rxns
             if not mech.rate_bnds[rxnIdx]['opt']: continue        # ignore fixed reactions
             
             # check all coefficients
-            for coefIdx, (coefName, coefDict) in enumerate(mech.coeffs_bnds[rxnIdx].items()):
-                if coefDict['opt']:
-                    coef_opt.append({'rxnIdx': rxnIdx, 'coefIdx': coefIdx, 'coefName': coefName})
-        
+            for bndsKey, subRxn in mech.coeffs_bnds[rxnIdx].items():
+                for coefIdx, (coefName, coefDict) in enumerate(subRxn.items()):
+                    if coefDict['opt']:
+                        coefKey, bndsKey = mech.get_coeffs_keys(rxn, bndsKey, rxnIdx=rxnIdx)
+                        coef_opt.append({'rxnIdx': rxnIdx, 'key': {'coeffs': coefKey, 'coeffs_bnds': bndsKey}, 
+                                         'coefIdx': coefIdx, 'coefName': coefName})
         return coef_opt                    
     
     def _set_rxn_coef_opt(self, shock_conditions, min_T_range=1000):
@@ -176,9 +179,11 @@ class Multithread_Optimize:
         for coef in coef_opt:
             if len(rxn_coef_opt) == 0 or coef['rxnIdx'] != rxn_coef_opt[-1]['rxnIdx']:
                 rxn_coef_opt.append(coef)
+                rxn_coef_opt[-1]['key'] = [rxn_coef_opt[-1]['key']]
                 rxn_coef_opt[-1]['coefIdx'] = [rxn_coef_opt[-1]['coefIdx']]
                 rxn_coef_opt[-1]['coefName'] = [rxn_coef_opt[-1]['coefName']]
             else:
+                rxn_coef_opt[-1]['key'].append(coef['key'])
                 rxn_coef_opt[-1]['coefIdx'].append(coef['coefIdx'])
                 rxn_coef_opt[-1]['coefName'].append(coef['coefName'])
 
@@ -195,11 +200,11 @@ class Multithread_Optimize:
             rxn_coef['coef_x0'] = []
             rxn_coef['coef_bnds'] = {'lower': [], 'upper': [], 'exist': []}
             
-            for coefName in rxn_coef['coefName']:
-                coef_x0 = mech.coeffs_bnds[rxnIdx][coefName]['resetVal']
+            for coefNum, (key, coefName) in enumerate(zip(rxn_coef['key'], rxn_coef['coefName'])):
+                coef_x0 = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['resetVal']
                 rxn_coef['coef_x0'].append(coef_x0)
 
-                coef_limits = mech.coeffs_bnds[rxnIdx][coefName]['limits']()
+                coef_limits = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['limits']()
                 if np.isnan(coef_limits).any():
                     if coefName == 'pre_exponential_factor':
                         rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)             # A should be positive

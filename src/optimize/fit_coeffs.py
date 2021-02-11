@@ -92,7 +92,7 @@ def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[
 
     return popt
 
-def fit_generic(rates, T, P, X, coefNames, rxnIdx, mech, x0, bnds):
+def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
     def fit_rate_eqn(P, X, mech, coefNames, rxnIdx):
         rxn = mech.gas.reaction(rxnIdx)
         def inner(invT, *coeffs):
@@ -101,7 +101,7 @@ def fit_generic(rates, T, P, X, coefNames, rxnIdx, mech, x0, bnds):
                     coeffs = np.append(coeffs, 0)
 
             for coefName, coefVal in zip(coefNames, coeffs):   # updates reaction mechanism for specific reaction
-                mech.coeffs[rxnIdx][coefName] = coefVal
+                mech.coeffs[rxnIdx][coefKeys['coeffs']][coefName] = coefVal
             mech.modify_reactions(mech.coeffs, rxnNums=rxnIdx)
 
             rate = []
@@ -127,8 +127,8 @@ def fit_generic(rates, T, P, X, coefNames, rxnIdx, mech, x0, bnds):
     rxn = mech.gas.reaction(rxnIdx)
     
     # Faster and works for extreme values like n = -70
-    if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction:  
-        x0 = [mech.coeffs_bnds[rxnIdx][coefName]['resetVal'] for coefName in mech.coeffs_bnds[rxnIdx]]
+    if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction:
+        #x0 = [mech.coeffs_bnds[rxnIdx][coefName]['resetVal'] for coefName in mech.coeffs_bnds[rxnIdx]]
         coeffs = fit_arrhenius(rates, T, x0=x0, coefNames=coefNames, bnds=bnds)
 
         if type(rxn) is ct.ThreeBodyReaction and 'pre_exponential_factor' in coefNames:
@@ -178,13 +178,13 @@ def fit_generic(rates, T, P, X, coefNames, rxnIdx, mech, x0, bnds):
     return coeffs
 
 
-def fit_coeffs(rates, T, P, X, coefNames, rxnIdx, x0, bnds, mech):
+def fit_coeffs(rates, T, P, X, rxnIdx, coefKeys, coefNames, x0, bnds, mech): 
     if len(coefNames) == 0: return # if not coefs being optimized in rxn, return 
     
     x0 = deepcopy(x0)
     bnds = deepcopy(bnds)
 
-    return fit_generic(rates, T, P, X, coefNames, rxnIdx, mech, x0, bnds)
+    return fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds)
     
 
 def debug(mech):
@@ -198,8 +198,9 @@ def debug(mech):
     X = {'Kr': 0.99, 'C8H8': 0.01}
         
     coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
+    coefBndsKeys = {'coeffs': [0, 0, 0], 'coeffs_bnds': ['rate', 'rate', 'rate']}
     rxnIdx = 0
-    coeffs = fit_coeffs(rates, T, P, X, coefNames, rxnIdx, mech)
+    coeffs = fit_coeffs(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech)
     print(timer() - start)
     # print(coeffs)
     # print(np.array([2.4442928e+08, 3.4120000e+11, 0.0000000e+00]))

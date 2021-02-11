@@ -136,9 +136,9 @@ def update_mech_coef_opt(mech, coef_opt, x):
     mech_changed = False
     for i, idxDict in enumerate(coef_opt):
         rxnIdx, coefName = idxDict['rxnIdx'], idxDict['coefName']
-        if mech.coeffs[rxnIdx][coefName] != x[i]:       # limits mech changes. Should increase speed a little
+        if mech.coeffs[rxnIdx][idxDict['key']['coeffs']][coefName] != x[i]:       # limits mech changes. Should increase speed a little
             mech_changed = True
-            mech.coeffs[rxnIdx][coefName] = x[i]
+            mech.coeffs[rxnIdx][idxDict['key']['coeffs']][coefName] = x[i]
     
     if mech_changed:
         mech.modify_reactions(mech.coeffs)  # Update mechanism with new coefficients
@@ -442,11 +442,13 @@ class Fit_Fun:
             coef_bnds = [rxn_coef['coef_bnds']['lower'], rxn_coef['coef_bnds']['upper']]
             rxn_rates = all_rates[i:i+len(T)]
             if len(coeffs) == 0:
-                coeffs = fit_coeffs(rxn_rates, T, P, X, rxn_coef['coefName'], rxnIdx, coef_x0, coef_bnds, self.mech)
+                coeffs = fit_coeffs(rxn_rates, T, P, X, rxnIdx, rxn_coef['key'], rxn_coef['coefName'], 
+                                    coef_x0, coef_bnds, self.mech)
                 if coeffs is None:
                     return
             else:
-                coeffs_append = fit_coeffs(rxn_rates, T, P, X, rxn_coef['coefName'], rxnIdx, coef_x0, coef_bnds, self.mech)
+                coeffs_append = fit_coeffs(rxn_rates, T, P, X, rxnIdx, rxn_coef['key'], rxn_coef['coefName'], 
+                                           coef_x0, coef_bnds, self.mech)
                 if coeffs_append is None:
                     return
                 coeffs = np.append(coeffs, coeffs_append)

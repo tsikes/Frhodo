@@ -19,24 +19,11 @@ def silentSetValue(obj, value):
     obj.setValue(value)
     obj.blockSignals(False)          # allow signals again
     
-def keysFromBox(box):
-    if box.info['type'] == 'Arrhenius':
-        bnds_key = 'rate'
-        coef_key = 0
-    elif box.info['type'] == 'Plog Reaction':
-        if 'high' in box.info['coefAbbr']:
-            bnds_key = 'high_rate'
-            coef_key = len(mech.coeffs[box.info['rxnNum']]) - 1
-        elif 'low' in box.info['coefAbbr']:
-            bnds_key = 'low_rate'
-            coef_key = 0
-    elif box.info['type'] == 'Falloff Reaction':
-        if 'high' in box.info['coefAbbr']:
-            coef_key = bnds_key = 'high_rate'
-        elif 'low' in box.info['coefAbbr']:
-            coef_key = bnds_key = 'low_rate'
-
-    return coef_key, bnds_key
+def keysFromBox(box, mech):
+    coefAbbr, rxnIdx = box.info['coefAbbr'], box.info['rxnNum']
+    rxn = mech.gas.reactions()[rxnIdx]
+    
+    return mech.get_coeffs_keys(rxn, coefAbbr, rxnIdx=rxnIdx)
 
 class Tree(QtCore.QObject):
     def __init__(self, parent):
@@ -322,7 +309,7 @@ class Tree(QtCore.QObject):
         cantera_value = self.convert._arrhenius(rxnNum, deepcopy([coeffs]), conv_type)
                 
         rateLimits = parent.display_shock['rate_bnds'][rxnNum]
-        coef_key, bnds_key = keysFromBox(sender)
+        coef_key, bnds_key = keysFromBox(sender, mech)
 
         coef_bnds_dict = mech.coeffs_bnds[rxnNum][bnds_key][coefName]
         coefLimits = coef_bnds_dict['limits']()
@@ -424,7 +411,7 @@ class Tree(QtCore.QObject):
                 coefNum, coefName, coefAbbr = sender.info['coefNum'], sender.info['coefName'], sender.info['coefAbbr']
                 
                 # get correct uncertainty diction based on reaction type
-                coef_key, bnds_key = keysFromBox(sender)
+                coef_key, bnds_key = keysFromBox(sender, mech)
 
                 coefUncDict = mech.coeffs_bnds[rxnNum][bnds_key][coefName]
                 uncBox = parent.mech_tree.rxn[rxnNum]['uncBox'][coefNum+1]
@@ -529,7 +516,7 @@ class Tree(QtCore.QObject):
             valBoxes = parent.mech_tree.rxn[rxnNum]['valueBox']
             for n, valBox in enumerate(valBoxes):    # update value boxes
                 coefName = valBox.info['coefName']
-                coef_key, bnds_key = keysFromBox(valBox)
+                coef_key, bnds_key = keysFromBox(valBox, mech)
                 
                 resetVal = mech.coeffs_bnds[rxnNum][bnds_key][coefName]['resetVal']
                 coeffs = [*valBox.info['coef'], deepcopy(resetVal)]
@@ -565,7 +552,8 @@ class Tree(QtCore.QObject):
                 # TODO: THIS REPEATS FROM RESET VALUES, BETTER TO ABSTRACT
                 if uncBox.uncType == '±':
                     if uncBox.info['coef'][1] == 'pre_exponential_factor': continue
-                    uncVal = parent.mech.coeffs_bnds[rxnNum][coefName]['value']
+                    coef_key, bnds_key = keysFromBox(valBox, mech)
+                    uncVal = parent.mech.coeffs_bnds[rxnNum][bnds_key][coefName]['value']
                     coeffs = [*valBox.info['coef'], deepcopy(uncVal)]
                     uncVal = self.convert._arrhenius(rxnNum, [coeffs], conv_type)[0][2]
                     silentSetValue(uncBox, uncVal)  # update value
@@ -644,7 +632,7 @@ class Tree(QtCore.QObject):
 
             for box in rxn['valueBox']:
                 rxnNum, coefName = box.info['rxnNum'], box.info['coefName']
-                coef_key, bnds_key = keysFromBox(box)
+                coef_key, bnds_key = keysFromBox(box, mech)
                 resetCoef = mech.coeffs_bnds[rxnNum][bnds_key][coefName]['resetVal']
                 mech.coeffs[rxnNum][coef_key][coefName] = resetCoef
                 
@@ -719,8 +707,9 @@ class Tree(QtCore.QObject):
                 updateRates.append(rxnNum)
                 for box in rxn['formulaBox']:
                     rxnNum, coefName = box.info['rxnNum'], box.info['coefName']
-                    current_value = mech.coeffs[rxnNum][coefName]
-                    reset_value = mech.coeffs_bnds[rxnNum][coefName]['resetVal']
+                    coef_key, bnds_key = keysFromBox(box, mech)
+                    current_value = mech.coeffs[rxnNum][coef_key][coefName]
+                    reset_value = mech.coeffs_bnds[rxnNum][bnds_key][coefName]['resetVal']
                     if reset_value == 0.0:
                         eqn = '+' + str(current_value)
                     else:
@@ -1209,8 +1198,9 @@ class ScientificLineEdit(QLineEdit):
     
     def applyFormula(self, emit, adjustment='*1.0'):               
         parent = self.parent
-        rxnNum, boxType = self.info['rxnNum'], self.info['type']
-        coefName = self.info['coefName']
+        mech = parent.mech
+        rxnNum, boxType, coefName = self.info['rxnNum'], self.info['type'], self.info['coefName']
+        coef_key, bnds_key = keysFromBox(self, mech)
         tree = parent.mech_tree
         
         formula = self.formula
@@ -1228,16 +1218,16 @@ class ScientificLineEdit(QLineEdit):
             formula = formula.replace(name, "var['" + name + "']")
             if subRxnNum == rxnNum: # if rxnNum matches current value, set value to initial
                 rxnNum, coefName = self.info['rxnNum'], self.info['coefName']
-                var[name] = parent.mech.coeffs_bnds[rxnNum][coefName]['resetVal']
+                var[name] = mech.coeffs_bnds[rxnNum][bnds_key][coefName]['resetVal']
                 if len(names) == 1 and formula[-1] == ']' and adjustment not in ['*1.0', '+0.0']:
                     formula += adjustment
                     self.formula += adjustment
             else:
                 for box in tree.rxn[subRxnNum]['valueBox']:
                     if box.info['coefName'] == coefName:
-                        var[name] = parent.mech.coeffs[subRxnNum][coefName]
+                        var[name] = mech.coeffs[subRxnNum][coef_key][coefName]
         
-        parent.mech.coeffs[rxnNum][coefName] = value = eval(formula)
+        mech.coeffs[rxnNum][coef_key][coefName] = value = eval(formula)
         conv_type = 'Cantera2' + parent.tree.mech_tree_type
         coeffs = [*self.info['coef'], value]
         value = parent.convert_units._arrhenius(rxnNum, deepcopy([coeffs]), conv_type)[0][2]

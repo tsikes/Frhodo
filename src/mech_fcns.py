@@ -300,6 +300,30 @@ class Chemical_Mechanism:
                 rate_bnds.append({})
                 reset_mech.append({})
 
+    def get_coeffs_keys(self, rxn, coefAbbr, rxnIdx=None):
+        if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
+            bnds_key = 'rate'
+            coef_key = 0
+        elif type(rxn) is ct.PlogReaction:
+            if 'high' in coefAbbr:
+                if rxnIdx is None:  # get reaction index if not provided
+                    for rxnIdx, mechRxn in enumerate(self.gas.reactions()):
+                        if rxn is mechRxn:
+                            break
+                
+                bnds_key = 'high_rate'
+                coef_key = len(self.coeffs[rxnIdx]) - 1
+            elif 'low' in coefAbbr:
+                bnds_key = 'low_rate'
+                coef_key = 0
+        elif type(rxn) is ct.FalloffReaction:
+            if 'high' in coefAbbr:
+                coef_key = bnds_key = 'high_rate'
+            elif 'low' in coefAbbr:
+                coef_key = bnds_key = 'low_rate'
+
+        return coef_key, bnds_key
+
     def set_thermo_expression_coeffs(self):         # TODO Doesn't work with NASA 9
         self.thermo_coeffs = []
         for i in range(self.gas.n_species):
@@ -469,13 +493,9 @@ class Uncertainty: # alternate name: why I hate pickle part 10
             return self._unc_fcn(x, unc_value, unc_type)
         else:
             coeffs_bnds = self.unc_dict['coeffs_bnds']
-            if 'key' not in self.unc_dict: # is Arrhenius
-                coefName = self.unc_dict['coef_name']
-                coef_dict = coeffs_bnds[self.rxnNum][coefName]
-            else:   # is a Plog or Falloff and requires key to get to dict
-                key = self.unc_dict['key']
-                coefName = self.unc_dict['coef_name']
-                coef_dict = coeffs_bnds[self.rxnNum][key][coefName]
+            key = self.unc_dict['key']
+            coefName = self.unc_dict['coef_name']
+            coef_dict = coeffs_bnds[self.rxnNum][key][coefName]
             
             coef_val = coef_dict['resetVal']
             unc_value = coef_dict['value']
