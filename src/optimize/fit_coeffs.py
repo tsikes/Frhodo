@@ -53,13 +53,13 @@ def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[
     
     A_idx = None
     if 'pre_exponential_factor' in coefNames:
-        A_idx = coefNames.index('pre_exponential_factor')
+        A_idx = np.argwhere(coefNames == 'pre_exponential_factor')[0]
     
     fit_func = fit_fcn_decorator(x0, idx)
     fit_func_jac = fit_fcn_decorator(x0, idx, jac=True)
     p0 = x0[idx]
 
-    if bnds:
+    if len(bnds) > 0:
         if A_idx is not None:
             bnds[0][A_idx] = np.log(bnds[0][A_idx])
             bnds[1][A_idx] = np.log(bnds[1][A_idx])
@@ -93,46 +93,39 @@ def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[
     return popt
 
 def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
-    def fit_rate_eqn(P, X, mech, coefNames, rxnIdx):
+    def fit_rate_eqn(P, X, mech, key, coefNames, rxnIdx):
         rxn = mech.gas.reaction(rxnIdx)
-        def inner(invT, *coeffs):
-            if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction: # if 2 coeffs for Arrhenius
-                if len(coeffs) == 2:                                                    # assume n = 0
-                    coeffs = np.append(coeffs, 0)
-
-            for coefName, coefVal in zip(coefNames, coeffs):   # updates reaction mechanism for specific reaction
-                mech.coeffs[rxnIdx][coefKeys['coeffs']][coefName] = coefVal
+        def inner(temperatures, *coeffs):
+            mech.coeffs[rxnIdx][key] = coeffs
             mech.modify_reactions(mech.coeffs, rxnNums=rxnIdx)
 
             rate = []
-            temperatures = np.divide(10000, invT)
-            for n, T in enumerate(temperatures):  # TODO FOR PRESSURE DEPENDENT REACTIONS ZIP PRESSURE
+            for n, T in enumerate(temperatures):
                 mech.set_TPX(T, P[n], X[n])
                 rate.append(mech.gas.forward_rate_constants[rxnIdx])
+            
+            #if n > 0:
+            #    print(temperatures)
+            #    print(rate)
+            #    print('')
             return np.log10(rate)
         return inner
     
-    def scale_fcn(coefVals, coefNames, rxn, dir='forward'):
-        coefVals = np.copy(coefVals)
-        # TODO: UPDATE THIS FOR OTHER TYPES OF EXPRESSIONS, Works only for Arrhenius
-        if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction: 
-            for n, coefVal in enumerate(coefVals):   # updates reaction mechanism for specific reaction
-                if coefNames[n] == 'pre_exponential_factor':
-                    if dir == 'forward':
-                        coefVals[n] = 10**coefVal
-                    else:
-                        coefVals[n] = np.log10(coefVal)
-        return coefVals
-    
     rxn = mech.gas.reaction(rxnIdx)
-    
+    rates = np.array(rates)
+    T = np.array(T)
+    P = np.array(P)
+    x0 = np.array(x0)
+    coefNames = np.array(coefNames)
+    bnds = np.array(bnds)
+
     # Faster and works for extreme values like n = -70
     if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction:
         #x0 = [mech.coeffs_bnds[rxnIdx][coefName]['resetVal'] for coefName in mech.coeffs_bnds[rxnIdx]]
         coeffs = fit_arrhenius(rates, T, x0=x0, coefNames=coefNames, bnds=bnds)
 
         if type(rxn) is ct.ThreeBodyReaction and 'pre_exponential_factor' in coefNames:
-            A_idx = coefNames.index('pre_exponential_factor')
+            A_idx = np.argwhere(coefNames == 'pre_exponential_factor')[0]
 
             if not rxn.efficiencies:
                 M = 1/mech.gas.density_mole
@@ -146,35 +139,60 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
             
             coeffs[A_idx] = coeffs[A_idx]/M
 
-        return coeffs
-    
-    # Generic fit if explicit case not specified
-    invT = np.divide(10000, T)
-    logk = np.log10(rates)
-    x0s = scale_fcn(x0, coefNames, rxn, dir='inverse')
-    
-    if not isinstance(X, (list, np.ndarray)):   # if only a single composition is given, duplicate
-        X = [X]*len(invT)
-    
-    eqn = lambda invT, *x: fit_rate_eqn(P, X, mech, coefNames, rxnIdx)(invT, *scale_fcn(x, coefNames, rxn))
-    s = np.abs(approx_fprime(x0s, lambda x: eqn([np.mean(invT)], *x), 1E-9))
-    s[s==0] = 1E-9  # TODO: MAKE THIS BETTER running into problem when Ea is zero, this is a janky workaround
-    # s /= np.max(s)  # to prevent overflow if s_i is > 1 and unbounded
-    scaled_eqn = lambda invT, *x: eqn(invT, *(x/s + x0s))
-    bnds[0] = (scale_fcn(bnds[0], coefNames, rxn, dir='inverse') - x0s)*s
-    bnds[1] = (scale_fcn(bnds[1], coefNames, rxn, dir='inverse') - x0s)*s
-    p0 = np.zeros_like(x0s)
-    
-    with warnings.catch_warnings():
-       warnings.simplefilter('ignore', OptimizeWarning)
-       try:
-           popt, _ = curve_fit(scaled_eqn, invT, logk, p0=p0, bounds=bnds,
-                               method='dogbox', jac='2-point')
-       except:
-           return
+    elif type(rxn) is ct.FalloffReaction:
+        x0 = np.array(x0)
+        coefNames = np.array(coefNames)
+        bnds = np.array(bnds)
+        old_coeffs = deepcopy(mech.coeffs[rxnIdx])
+        key_dict = {}
+        old_key = ''
+        for n, key in enumerate(coefKeys):  # break apart falloff reaction arrhenius/falloff
+            if key['coeffs'] != old_key:
+                key_dict[key['coeffs']] = [n]
+                old_key = key['coeffs']
+            else:
+                key_dict[key['coeffs']].append(n)
+        
+        coeffs = []
+        for key, idxs in key_dict.items():
+            idxs = np.array(idxs)
+            if 'rate' in key:
+                arrhenius_coeffs = fit_arrhenius(rates[idxs], T[idxs], x0=x0[idxs], 
+                                                 coefNames=coefNames[idxs], bnds=bnds[:,idxs])
+                for n, coefName in enumerate(['activation_energy', 'pre_exponential_factor', 'temperature_exponent']):
+                    mech.coeffs[rxnIdx][key][coefName] = arrhenius_coeffs[n]
 
-    coeffs = scale_fcn(popt/s + x0s, coefNames, rxn)
+                coeffs.extend(arrhenius_coeffs)
+
+            else:   # fit falloff
+                T = T[idxs]
+                logk = np.log10(rates[idxs])
+                x0 = x0[idxs]
     
+                if not isinstance(X, (list, np.ndarray)):   # if only a single composition is given, duplicate
+                    X = [X]*len(T)
+                
+                eqn = lambda T, *x: fit_rate_eqn(P[idxs], X, mech, 'falloff_parameters', coefNames[idxs], rxnIdx)(T, *x)
+                s = np.abs(approx_fprime(x0, lambda x: eqn([np.mean(T)], *x), 1E-3))
+                s[s==0] = 1E-9  # TODO: MAKE THIS BETTER running into problem when Ea is zero, this is a janky workaround
+                # s /= np.max(s)  # to prevent overflow if s_i is > 1 and unbounded
+                scaled_eqn = lambda T, *x: eqn(T, *(x/s + x0))
+                bnds = (bnds[:, idxs] - x0)*s
+                p0 = np.zeros_like(x0)
+
+                with warnings.catch_warnings():
+                   warnings.simplefilter('ignore', OptimizeWarning)
+                   try:
+                       popt, _ = curve_fit(scaled_eqn, T, logk, p0=p0, bounds=bnds, method='dogbox', jac='2-point')
+                   except:
+                       return
+
+                coeffs.extend(popt/s + x0)
+
+        mech.coeffs[rxnIdx] = old_coeffs    # reset coeffs
+
+        print(coeffs)
+
     return coeffs
 
 

@@ -4,6 +4,7 @@
 
 from qtpy.QtCore import QThreadPool
 import numpy as np
+import cantera as ct
 import multiprocessing as mp
 from copy import deepcopy
 
@@ -163,6 +164,11 @@ class Multithread_Optimize:
         for rxnIdx, rxn in enumerate(mech.gas.reactions()):      # searches all rxns
             if not mech.rate_bnds[rxnIdx]['opt']: continue        # ignore fixed reactions
             
+            # if Plog convert into Troe falloff
+            if type(rxn) is ct.PlogReaction: 
+                pass
+                # TODO CONVERT FROM PLOG TO FALLOFF  
+
             # check all coefficients
             for bndsKey, subRxn in mech.coeffs_bnds[rxnIdx].items():
                 for coefIdx, (coefName, coefDict) in enumerate(subRxn.items()):
@@ -170,9 +176,10 @@ class Multithread_Optimize:
                         coefKey, bndsKey = mech.get_coeffs_keys(rxn, bndsKey, rxnIdx=rxnIdx)
                         coef_opt.append({'rxnIdx': rxnIdx, 'key': {'coeffs': coefKey, 'coeffs_bnds': bndsKey}, 
                                          'coefIdx': coefIdx, 'coefName': coefName})
+
         return coef_opt                    
     
-    def _set_rxn_coef_opt(self, shock_conditions, min_T_range=1000):
+    def _set_rxn_coef_opt(self, shock_conditions, min_T_range=1000, min_P_range=1E4):
         coef_opt = deepcopy(self.coef_opt)
         mech = self.parent.mech
         rxn_coef_opt = []
@@ -187,16 +194,10 @@ class Multithread_Optimize:
                 rxn_coef_opt[-1]['coefIdx'].append(coef['coefIdx'])
                 rxn_coef_opt[-1]['coefName'].append(coef['coefName'])
 
-        T_bnds = np.array([np.min(shock_conditions['T_reactor']), np.max(shock_conditions['T_reactor'])])
-        if T_bnds[1] - T_bnds[0] < min_T_range:  # if T_range isn't large enough increase it
-            T_mean = np.mean(T_bnds)
-            T_bnds = np.array([T_mean-min_T_range/2, T_mean+min_T_range/2])
-            # T_bnds = np.ones_like(T_bnds)*np.mean(T_bnds) + np.ones_like(T_bnds)*[-1, 1]*min_T_range/2
-        invT_bnds = np.divide(10000, T_bnds)
-        P_bnds = [np.min(shock_conditions['P_reactor']), np.max(shock_conditions['P_reactor'])]
         for rxn_coef in rxn_coef_opt:
             # Set coefficient initial values and bounds
             rxnIdx = rxn_coef['rxnIdx']
+            rxn = mech.gas.reaction(rxnIdx)
             rxn_coef['coef_x0'] = []
             rxn_coef['coef_bnds'] = {'lower': [], 'upper': [], 'exist': []}
             
@@ -226,12 +227,53 @@ class Multithread_Optimize:
             rxn_coef['coef_bnds']['exist'] = np.array((lb_exist, ub_exist)).T
             
             # Set evaluation rate conditions
-            n_coef = len(rxn_coef['coefIdx'])
-            rxn_coef['invT'] = np.linspace(*invT_bnds, n_coef)
-            rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
-            rxn_coef['P'] = np.linspace(*P_bnds, n_coef)
-            rxn_coef['X'] = shock_conditions['thermo_mix'][0]   # TODO: IF MIXTURE COMPOSITION FOR DUMMY RATES MATTER CHANGE HERE
+            T_bnds = np.array([np.min(shock_conditions['T_reactor']), np.max(shock_conditions['T_reactor'])])
+            if T_bnds[1] - T_bnds[0] < min_T_range:  # if T_range isn't large enough increase it
+                T_median = np.median(T_bnds)
+                T_bnds = np.array([T_median-min_T_range/2, T_median+min_T_range/2])
+                if T_bnds[0] < 298.15:
+                    T_bnds[1] += 298.15 - T_bnds[0]
+                    T_bnds[0] = 298.15
+
+            invT_bnds = np.divide(10000, T_bnds)
+
+            if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
+                n_coef = len(rxn_coef['coefIdx'])
+                rxn_coef['invT'] = np.linspace(*invT_bnds, n_coef)
+                rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
+                rxn_coef['P'] = np.ones_like(rxn_coef['T'])*np.median(shock_conditions['P_reactor'])
+
+            elif type(rxn) is ct.FalloffReaction:
+                P_bnds = np.array([np.min(shock_conditions['P_reactor']), np.max(shock_conditions['P_reactor'])])
+                if P_bnds[1] - P_bnds[0] < min_P_range:
+                    P_median = np.median(P_bnds)
+                    P_bnds = np.array([P_median-min_P_range/2, P_median+min_P_range/2])
+                    if P_bnds[0] <= 0.0:
+                        P_bnds[1] += 1E-5 - P_bnds[0]
+                        P_bnds[0] = 1E-5
+
+                rxn_coef['invT'] = []
+                rxn_coef['P'] = []
+                rxn_coef['X'] = []
+                for coef_type in ['low_rate', 'high_rate']:
+                    n_coef = 0
+                    for coef in rxn_coef['key']:
+                        if coef_type in coef['coeffs']:
+                            n_coef += 1
+                   
+                    rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
+                    if 'rate' in coef_type:
+                        rxn_coef['P'].append(np.ones((n_coef))*np.median(shock_conditions['P_reactor']))  # Doesn't matter, will evaluate LPL and HPL
+                    
+                rxn_coef['invT'].append(np.linspace(*invT_bnds, 4))
+                rxn_coef['P'].append(np.geomspace(*P_bnds, 4))
+
+                rxn_coef['invT'] = np.concatenate(rxn_coef['invT'], axis=0)
+                rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
+                rxn_coef['P'] = np.concatenate(rxn_coef['P'], axis=0)
             
+            rxn_coef['X'] = shock_conditions['thermo_mix'][0]   # TODO: IF MIXTURE COMPOSITION FOR DUMMY RATES MATTER CHANGE HERE
+
         return rxn_coef_opt
 
     def update(self, result, writeLog=True):

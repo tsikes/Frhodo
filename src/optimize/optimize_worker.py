@@ -9,11 +9,14 @@ from copy import deepcopy
 
 import nlopt
 import numpy as np
+import cantera as ct
 
 from timeit import default_timer as timer
 
 from optimize.fit_fcn import initialize_parallel_worker, Fit_Fun
 
+
+Ru = ct.gas_constant
 
 class Worker(QRunnable):
     '''
@@ -51,9 +54,22 @@ class Worker(QRunnable):
         def rates():
             output = []
             for rxn_coef in self.rxn_coef_opt:
-                for T, P in zip(rxn_coef['T'], rxn_coef['P']):
+                rxnIdx = rxn_coef['rxnIdx']
+                for n, (T, P) in enumerate(zip(rxn_coef['T'], rxn_coef['P'])):
                     mech.set_TPX(T, P)
-                    output.append(mech.gas.forward_rate_constants[rxn_coef['rxnIdx']])
+                    key = rxn_coef['key'][n]['coeffs']
+
+                    if 'rate' in key:
+                        A = mech.coeffs[rxnIdx][key]['pre_exponential_factor']
+                        b = mech.coeffs[rxnIdx][key]['temperature_exponent']
+                        Ea = mech.coeffs[rxnIdx][key]['activation_energy']
+
+                        k = A*T**b*np.exp(-Ea/Ru/T)
+
+                        output.append(k)
+
+                    else:
+                        output.append(mech.gas.forward_rate_constants[rxnIdx])
             
             return np.log(output)
         
@@ -69,13 +85,12 @@ class Worker(QRunnable):
         ub = []
         unscaled_bnds = {'lower': [], 'upper': []}
         i = 0
-        for rxn_coef in self.rxn_coef_opt:
+        for rxn_coef in self.rxn_coef_opt:      # LB and UB are off for troe arrhenius parts
             rxnIdx = rxn_coef['rxnIdx']
             rate_bnds_val = mech.rate_bnds[rxnIdx]['value']
             rate_bnds_type = mech.rate_bnds[rxnIdx]['type']
             for T, P in zip(rxn_coef['T'], rxn_coef['P']):
-                mech.set_TPX(T, P)
-                bnds = mech.rate_bnds[rxnIdx]['limits'](mech.gas.forward_rate_constants[rxnIdx])
+                bnds = mech.rate_bnds[rxnIdx]['limits'](np.exp(self.x0[i]))
                 bnds = np.sort(np.log(bnds))  # operate on ln and scale
                 unscaled_bnds['lower'].append(bnds[0])
                 unscaled_bnds['upper'].append(bnds[1])

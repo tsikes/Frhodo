@@ -281,7 +281,7 @@ class Chemical_Mechanism:
 
             elif type(rxn) is ct.FalloffReaction:
                 coeffs_bnds.append({})
-                coeffs.append({'falloff_type': rxn.falloff.type, 'high_rate': [], 'low_rate': [], 'falloff_parameters': rxn.falloff.parameters, 
+                coeffs.append({'falloff_type': rxn.falloff.type, 'high_rate': [], 'low_rate': [], 'falloff_parameters': list(rxn.falloff.parameters), 
                                'default_efficiency': rxn.default_efficiency, 'efficiencies': rxn.efficiencies})
                 for key in ['low_rate', 'high_rate']:
                     rate = getattr(rxn, key)
@@ -292,6 +292,11 @@ class Chemical_Mechanism:
                                                     'limits': Uncertainty('coef', rxnNum, key=key, coef_name=attr, coeffs_bnds=coeffs_bnds),
                                                     'type': 'F'} for attr in attrs}
                     
+                key = 'falloff_parameters'
+                coeffs_bnds[-1][key] = {n: {'resetVal': coeffs[-1][key][n], 'value': np.nan, 
+                                            'limits': Uncertainty('coef', rxnNum, key=key, coef_name=n, coeffs_bnds=coeffs_bnds), 
+                                            'type': 'F', 'opt': True} for n in range(0,4)}
+
                 reset_mech.append({'rxnType': 'Falloff Reaction', 'rxnCoeffs': deepcopy(coeffs[-1])})
                 
             else:
@@ -321,6 +326,8 @@ class Chemical_Mechanism:
                 coef_key = bnds_key = 'high_rate'
             elif 'low' in coefAbbr:
                 coef_key = bnds_key = 'low_rate'
+            else:
+                coef_key = bnds_key = 'falloff_parameters'
 
         return coef_key, bnds_key
 
@@ -363,9 +370,29 @@ class Chemical_Mechanism:
             # elif type(rxn) is ct.PlogReaction:
                 # print(dir(rxn))
                 # print(rxn.rates[rxn_num])
-            # elif type(rxn) is ct.ChebyshevReaction: 
-                # print(dir(rxn))
-                # print(rxn.rates[rxn_num])
+            elif type(rxn) is ct.FalloffReaction:
+                for key in ['low_rate', 'high_rate', 'falloff_parameters']:
+                    if 'rate' in key:
+                        for coefName in ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']:
+                            if coeffs[rxnNum][key][coefName] != eval(f'rxn.{key}.{coefName}'):
+                                rxnChanged = True
+
+                                A = coeffs[rxnNum][key]['pre_exponential_factor']
+                                b = coeffs[rxnNum][key]['temperature_exponent']
+                                Ea = coeffs[rxnNum][key]['activation_energy']
+                                setattr(rxn, key, ct.Arrhenius(A, b, Ea))
+                                break
+                    else:
+                        if (coeffs[rxnNum][key] != eval(f'rxn.falloff.parameters')).any():
+                            rxnChanged = True
+
+                            if rxn.falloff.type == 'Troe':
+                                rxn.falloff = ct.TroeFalloff(coeffs[rxnNum][key])
+                            else:   # could also be SRI. For optimization this would need to be cast as Troe
+                                rxn.falloff = ct.SriFalloff(coeffs[rxnNum][key])
+
+            elif type(rxn) is ct.ChebyshevReaction: 
+                 pass
             else:
                 continue
             
@@ -495,8 +522,11 @@ class Uncertainty: # alternate name: why I hate pickle part 10
             coeffs_bnds = self.unc_dict['coeffs_bnds']
             key = self.unc_dict['key']
             coefName = self.unc_dict['coef_name']
+
+            if key == 'falloff_parameters': # falloff parameters have no limits
+                return [np.nan, np.nan]
+
             coef_dict = coeffs_bnds[self.rxnNum][key][coefName]
-            
             coef_val = coef_dict['resetVal']
             unc_value = coef_dict['value']
             unc_type = coef_dict['type']

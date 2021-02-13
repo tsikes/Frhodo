@@ -127,7 +127,7 @@ class Tree(QtCore.QObject):
                 coeffs_order = [1, 2, 0, 4, 5, 3] # Reorder coeffs into A_high, n_high, Ea_high, A_low
 
                 data.append({'num': rxnIdx, 'eqn': rxn.equation, 'type': rxn_type, 
-                             'coeffs': coeffs, 'coeffs_order': coeffs_order}) 
+                             'coeffs': coeffs, 'coeffs_order': coeffs_order})
             else:
                 data.append({'num': rxnIdx, 'eqn': rxn.equation, 'type': rxn_type})
                 # raise Exception("Equation type is not currently implemented for:\n{:s}".format(rxn.equation))
@@ -472,11 +472,21 @@ class Tree(QtCore.QObject):
         x0 = []
         for i, idxDict in enumerate(coef_opt):  # set changes to both spinboxes and backend coeffs
             rxnIdx, coefIdx = idxDict['rxnIdx'], idxDict['coefIdx']
-            coefName = list(parent.mech.coeffs[rxnIdx][0].keys())[coefIdx]
+            coeffs_key = idxDict['key']['coeffs']
+
+            if coeffs_key == 'falloff_parameters':
+                if type(parent.mech.coeffs[rxnIdx][coeffs_key]) is tuple:
+                    parent.mech.coeffs[rxnIdx][coeffs_key] = list(parent.mech.coeffs[rxnIdx][coeffs_key])
+                parent.mech.coeffs[rxnIdx][coeffs_key][coefIdx] = x[i]
+                continue # no falloff parameter boxes
+
+            coefName = list(parent.mech.coeffs[rxnIdx][coeffs_key].keys())[coefIdx]
             
-            parent.mech.coeffs[rxnIdx][0][coefName] = x[i]
+            parent.mech.coeffs[rxnIdx][coeffs_key][coefName] = x[i]
             coeffs = ['', coefName, x[i]]    # short name, long name, value
             value = self.convert._arrhenius(rxnIdx, [coeffs], conv_type)
+            if coeffs_key == 'low_rate':
+                coefIdx += 3
             coefBox = parent.mech_tree.rxn[rxnIdx]['valueBox'][coefIdx]
             silentSetValue(coefBox, value[0][2])               
         
@@ -525,8 +535,9 @@ class Tree(QtCore.QObject):
     
     def update_display_type(self):
         parent = self.parent()
+        mech = parent.mech
         conv_type = f'Cantera2{self.mech_tree_type}'
-        for rxnNum, rxn in enumerate(parent.mech.coeffs):
+        for rxnNum, rxn in enumerate(mech.coeffs):
             if 'valueBox' not in parent.mech_tree.rxn[rxnNum]: continue
 
             valBoxes = parent.mech_tree.rxn[rxnNum]['valueBox']
@@ -537,7 +548,8 @@ class Tree(QtCore.QObject):
                 
                 coefNum = valBox.info['coefNum']
                 coefName = valBox.info['coefName']
-                coeffs = [*valBox.info['coef'], rxn[coefName]]
+                coef_key, bnds_key = keysFromBox(valBox, mech)
+                coeffs = [*valBox.info['coef'], rxn[coef_key][coefName]]
                 coeffs = self.convert._arrhenius(rxnNum, [coeffs], conv_type)[0]
                 
                 silentSetValue(valBox, coeffs[2])  # update value
@@ -552,8 +564,8 @@ class Tree(QtCore.QObject):
                 # TODO: THIS REPEATS FROM RESET VALUES, BETTER TO ABSTRACT
                 if uncBox.uncType == '±':
                     if uncBox.info['coef'][1] == 'pre_exponential_factor': continue
-                    coef_key, bnds_key = keysFromBox(valBox, mech)
-                    uncVal = parent.mech.coeffs_bnds[rxnNum][bnds_key][coefName]['value']
+                    
+                    uncVal = mech.coeffs_bnds[rxnNum][bnds_key][coefName]['value']
                     coeffs = [*valBox.info['coef'], deepcopy(uncVal)]
                     uncVal = self.convert._arrhenius(rxnNum, [coeffs], conv_type)[0][2]
                     silentSetValue(uncBox, uncVal)  # update value
