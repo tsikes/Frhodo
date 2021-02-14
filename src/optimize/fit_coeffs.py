@@ -6,8 +6,12 @@ import numpy as np
 import cantera as ct
 import warnings
 from copy import deepcopy
+import nlopt
 from scipy.optimize import curve_fit, OptimizeWarning, approx_fprime
 from timeit import default_timer as timer
+
+from convert_units import OoM
+from optimize.optimize_misc_fcns import generalized_loss_fcn
 
 Ru = ct.gas_constant
 # Ru = 1.98720425864083
@@ -93,9 +97,9 @@ def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[
     return popt
 
 def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
-    def fit_rate_eqn(P, X, mech, key, coefNames, rxnIdx):
+    def fit_rate_eqn(logk, P, X, mech, key, coefNames, rxnIdx):
         rxn = mech.gas.reaction(rxnIdx)
-        def inner(temperatures, *coeffs):
+        def inner(temperatures, coeffs, scale_calc):
             mech.coeffs[rxnIdx][key] = coeffs
             mech.modify_reactions(mech.coeffs, rxnNums=rxnIdx)
 
@@ -103,12 +107,12 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
             for n, T in enumerate(temperatures):
                 mech.set_TPX(T, P[n], X[n])
                 rate.append(mech.gas.forward_rate_constants[rxnIdx])
-            
-            #if n > 0:
-            #    print(temperatures)
-            #    print(rate)
-            #    print('')
-            return np.log10(rate)
+
+            if not scale_calc:
+                loss = generalized_loss_fcn(np.log10(rate)-logk)
+                return loss.sum()    # defaults to L2 aka SSE
+            else:
+                return np.log10(rate)
         return inner
     
     rxn = mech.gas.reaction(rxnIdx)
@@ -168,30 +172,36 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
                 T = T[idxs]
                 logk = np.log10(rates[idxs])
                 x0 = x0[idxs]
+                x0s = 10**OoM(x0)
+                x0 = x0/x0s
     
                 if not isinstance(X, (list, np.ndarray)):   # if only a single composition is given, duplicate
                     X = [X]*len(T)
                 
-                eqn = lambda T, *x: fit_rate_eqn(P[idxs], X, mech, 'falloff_parameters', coefNames[idxs], rxnIdx)(T, *x)
-                s = np.abs(approx_fprime(x0, lambda x: eqn([np.mean(T)], *x), 1E-3))
-                s[s==0] = 1E-9  # TODO: MAKE THIS BETTER running into problem when Ea is zero, this is a janky workaround
-                # s /= np.max(s)  # to prevent overflow if s_i is > 1 and unbounded
-                scaled_eqn = lambda T, *x: eqn(T, *(x/s + x0))
-                bnds = (bnds[:, idxs] - x0)*s
+                eqn = lambda T, x, s_calc: fit_rate_eqn(logk, P[idxs], X, mech, 'falloff_parameters', coefNames[idxs], rxnIdx)(T, (x*x0s), s_calc)
+                s = np.abs(approx_fprime(x0, lambda x: eqn([np.mean(T)], x, True), 1E-2))
+                s[s==0] = 10**(OoM(np.min(s[s!=0])) - 1)  # TODO: MAKE THIS BETTER running into problem when s is zero, this is a janky workaround
+                scaled_eqn = lambda x, grad: eqn(T, (x/s + x0), False)
                 p0 = np.zeros_like(x0)
 
-                with warnings.catch_warnings():
-                   warnings.simplefilter('ignore', OptimizeWarning)
-                   try:
-                       popt, _ = curve_fit(scaled_eqn, T, logk, p0=p0, bounds=bnds, method='dogbox', jac='2-point')
-                   except:
-                       return
+                opt = nlopt.opt(nlopt.LN_SBPLX, 4) # either nlopt.LN_SBPLX or nlopt.LN_COBYLA
 
-                coeffs.extend(popt/s + x0)
+                opt.set_min_objective(scaled_eqn)
+                #opt.set_maxeval(int(options['stop_criteria_val'])-1)
+                #opt.set_maxtime(options['stop_criteria_val']*60)
+
+                opt.set_xtol_rel(1E-2)
+                opt.set_ftol_rel(1E-2)
+                #opt.set_lower_bounds(self.bnds['lower'])
+                #opt.set_upper_bounds(self.bnds['upper'])
+
+                opt.set_initial_step(1E-1)
+                x = opt.optimize(p0) # optimize!
+
+                print((x/s + x0)*x0s, opt.get_numevals())
+                coeffs.extend((x/s + x0)*x0s)
 
         mech.coeffs[rxnIdx] = old_coeffs    # reset coeffs
-
-        print(coeffs)
 
     return coeffs
 

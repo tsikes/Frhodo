@@ -59,7 +59,7 @@ class Worker(QRunnable):
                     mech.set_TPX(T, P)
                     key = rxn_coef['key'][n]['coeffs']
 
-                    if 'rate' in key:
+                    if type(key) is str and 'rate' in key:
                         A = mech.coeffs[rxnIdx][key]['pre_exponential_factor']
                         b = mech.coeffs[rxnIdx][key]['temperature_exponent']
                         Ea = mech.coeffs[rxnIdx][key]['activation_energy']

@@ -383,7 +383,7 @@ class Chemical_Mechanism:
                                 setattr(rxn, key, ct.Arrhenius(A, b, Ea))
                                 break
                     else:
-                        if (coeffs[rxnNum][key] != eval(f'rxn.falloff.parameters')).any():
+                        if (coeffs[rxnNum][key] != rxn.falloff.parameters).any():
                             rxnChanged = True
 
                             if rxn.falloff.type == 'Troe':

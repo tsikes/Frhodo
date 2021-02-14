@@ -236,25 +236,17 @@ class Multithread_Optimize:
                     T_bnds[0] = 298.15
 
             invT_bnds = np.divide(10000, T_bnds)
+            P = np.median(shock_conditions['P_reactor'])
 
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 n_coef = len(rxn_coef['coefIdx'])
                 rxn_coef['invT'] = np.linspace(*invT_bnds, n_coef)
                 rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
-                rxn_coef['P'] = np.ones_like(rxn_coef['T'])*np.median(shock_conditions['P_reactor'])
+                rxn_coef['P'] = np.ones_like(rxn_coef['T'])*P
 
             elif type(rxn) is ct.FalloffReaction:
-                P_bnds = np.array([np.min(shock_conditions['P_reactor']), np.max(shock_conditions['P_reactor'])])
-                if P_bnds[1] - P_bnds[0] < min_P_range:
-                    P_median = np.median(P_bnds)
-                    P_bnds = np.array([P_median-min_P_range/2, P_median+min_P_range/2])
-                    if P_bnds[0] <= 0.0:
-                        P_bnds[1] += 1E-5 - P_bnds[0]
-                        P_bnds[0] = 1E-5
-
+                rxn_coef['T'] = []
                 rxn_coef['invT'] = []
-                rxn_coef['P'] = []
-                rxn_coef['X'] = []
                 for coef_type in ['low_rate', 'high_rate']:
                     n_coef = 0
                     for coef in rxn_coef['key']:
@@ -262,16 +254,15 @@ class Multithread_Optimize:
                             n_coef += 1
                    
                     rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
-                    if 'rate' in coef_type:
-                        rxn_coef['P'].append(np.ones((n_coef))*np.median(shock_conditions['P_reactor']))  # Doesn't matter, will evaluate LPL and HPL
+                    rxn_coef['T'].append(np.divide(10000, rxn_coef['invT'][-1]))
                     
-                rxn_coef['invT'].append(np.linspace(*invT_bnds, 4))
-                rxn_coef['P'].append(np.geomspace(*P_bnds, 4))
+                rxn_coef['T'].append(np.linspace(*T_bnds, 4))
+                rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
 
+                rxn_coef['T'] = np.concatenate(rxn_coef['T'], axis=0)
                 rxn_coef['invT'] = np.concatenate(rxn_coef['invT'], axis=0)
-                rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
-                rxn_coef['P'] = np.concatenate(rxn_coef['P'], axis=0)
-            
+                rxn_coef['P'] = np.ones_like(rxn_coef['T'])*P # Doesn't matter, will evaluate LPL and HPL for arrhenius and median P for falloff
+
             rxn_coef['X'] = shock_conditions['thermo_mix'][0]   # TODO: IF MIXTURE COMPOSITION FOR DUMMY RATES MATTER CHANGE HERE
 
         return rxn_coef_opt
