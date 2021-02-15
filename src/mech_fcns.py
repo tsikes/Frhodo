@@ -297,7 +297,7 @@ class Chemical_Mechanism:
                                             'limits': Uncertainty('coef', rxnNum, key=key, coef_name=n, coeffs_bnds=coeffs_bnds), 
                                             'type': 'F', 'opt': True} for n in range(0,4)}
 
-                reset_mech.append({'rxnType': 'Falloff Reaction', 'rxnCoeffs': deepcopy(coeffs[-1])})
+                reset_mech.append({'rxnType': 'Falloff Reaction', 'falloffType': rxn.falloff.type, 'rxnCoeffs': deepcopy(coeffs[-1])})
                 
             else:
                 coeffs.append({})
