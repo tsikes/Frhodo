@@ -10,6 +10,7 @@ import numpy as np
 import integrate, shock_fcns, ck2yaml
 from timeit import default_timer as timer
 
+
 # list of all possible variables
 all_var = {'Laboratory Time':                  {'SIM_name': 't_lab',        'sub_type':  None},
            'Shockwave Time':                   {'SIM_name': 't_shock',      'sub_type':  None}, 
@@ -52,6 +53,8 @@ SIM_Dict = {'t_lab': 't', 't_shock': 't_shock', 'z': 'z', 'A': 'A', 'vel': 'vel'
             'eq_con': 'equilibrium_constants', 'rate_con': 'forward_rate_constants', 
             'rate_con_rev': 'reverse_rate_constants', 'net_ROP': 'net_rates_of_progress',
             'for_ROP': 'forward_rates_of_progress', 'rev_ROP': 'reverse_rates_of_progress'}
+
+default_SRI_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'a', 'b', 'c', 'd', 'e']
 
 class SIM_Property:
     def __init__(self, name, parent=None):
@@ -250,6 +253,7 @@ class Chemical_Mechanism:
         self.reset_mech = reset_mech = []
         self.coeffs_bnds = coeffs_bnds = []
         self.rate_bnds = rate_bnds = []
+
         for rxnNum, rxn in enumerate(self.gas.reactions()):
             rate_bnds.append({'value': np.nan, 'limits': Uncertainty('rate', rxnNum, rate_bnds=rate_bnds), 'type': 'F', 'opt': False})
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
@@ -293,9 +297,10 @@ class Chemical_Mechanism:
                                                     'type': 'F'} for attr in attrs}
                     
                 key = 'falloff_parameters'
+                n_coef = len(rxn.falloff.parameters)
                 coeffs_bnds[-1][key] = {n: {'resetVal': coeffs[-1][key][n], 'value': np.nan, 
                                             'limits': Uncertainty('coef', rxnNum, key=key, coef_name=n, coeffs_bnds=coeffs_bnds), 
-                                            'type': 'F', 'opt': True} for n in range(0,4)}
+                                            'type': 'F', 'opt': True} for n in range(0,n_coef)}
 
                 reset_mech.append({'rxnType': 'Falloff Reaction', 'falloffType': rxn.falloff.type, 'rxnCoeffs': deepcopy(coeffs[-1])})
                 
@@ -354,6 +359,7 @@ class Chemical_Mechanism:
             if isinstance(rxnNums, (float, int)):  # if single reaction given, run that one
                 rxnNums = [rxnNums]
         
+        rxns_to_SRI = {}
         for rxnNum in rxnNums:
             rxn = self.gas.reaction(rxnNum)
             rxnChanged = False
@@ -367,9 +373,20 @@ class Chemical_Mechanism:
                     b = coeffs[rxnNum][0]['temperature_exponent']
                     Ea = coeffs[rxnNum][0]['activation_energy']
                     rxn.rate = ct.Arrhenius(A, b, Ea)
-            # elif type(rxn) is ct.PlogReaction:
-                # print(dir(rxn))
-                # print(rxn.rates[rxn_num])
+            
+            #elif type(rxn) is ct.PlogReaction:
+            #    # Search for altered reactions, if found convert to SRI
+            #    for n, rate in enumerate(rxn.rates):
+            #        if rxnNum in rxns_to_SRI:
+            #            break
+
+            #        for coefName in ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']:
+            #            if coeffs[rxnNum][n][coefName] != eval(f'rate[1].{coefName}'):
+            #                rxns_to_SRI[rxnNum] = 'SRI'
+            #                break
+
+            #    continue
+
             elif type(rxn) is ct.FalloffReaction:
                 for key in ['low_rate', 'high_rate', 'falloff_parameters']:
                     if 'rate' in key:
@@ -384,7 +401,11 @@ class Chemical_Mechanism:
                                 break
                     else:
                         if (coeffs[rxnNum][key] != rxn.falloff.parameters).any():
-                            rxnChanged = True
+                            #if rxn.falloff.type != 'SRI':
+                            #    rxns_to_SRI[rxnNum] = 'SRI'
+                            #    continue
+
+                            #rxnChanged = True
 
                             if rxn.falloff.type == 'Troe':
                                 rxn.falloff = ct.TroeFalloff(coeffs[rxnNum][key])
@@ -398,6 +419,9 @@ class Chemical_Mechanism:
             
             if rxnChanged:
                 self.gas.modify_reaction(rxnNum, rxn)
+        
+        #if len(rxns_to_SRI) > 0:    # cast pressure dependent reaction types as SRI
+        #    self.update_gas(rxns_to_SRI)
 
         time.sleep(5E-3)        # Not sure if this is necessary, but it reduces strange behavior in incident shock reactor
     
@@ -484,6 +508,18 @@ class Chemical_Mechanism:
             
         output['success'] = True
         return output
+
+    def M(self, rxn):
+        if not rxn.efficiencies:
+            M = 1/self.gas.density_mole
+        else:
+            M = 0
+            for (s, conc) in zip(self.gas.species_names, self.gas.concentrations):
+                if s in rxn.efficiencies:
+                    M += conc*rxn.efficiencies[s]
+                else:
+                    M += conc
+        return M
 
     def run(self, reactor_choice, t_end, T_reac, P_reac, mix, **kwargs):
         return self.reactor.run(reactor_choice, t_end, T_reac, P_reac, mix, **kwargs)

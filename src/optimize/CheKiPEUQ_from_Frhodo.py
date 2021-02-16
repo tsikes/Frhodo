@@ -158,9 +158,9 @@ class CheKiPEUQ_Frhodo_interface:
         #Step 2 of Bayesian:  populate Bayesian_dict with any variables and uncertainties needed.
         self.Bayesian_dict = {}
         self.Bayesian_dict['pars_uncertainty_distribution'] = input_dict['opt_settings']['bayes_dist_type']  #options can be 'Auto', 'Gaussian' or 'Uniform'. 
-        self.Bayesian_dict['rate_constants_initial_guess'] = deepcopy(input_dict['x0'])
-        self.Bayesian_dict['rate_constants_lower_bnds'] = deepcopy(input_dict['bounds']['lower'])
-        self.Bayesian_dict['rate_constants_upper_bnds'] = deepcopy(input_dict['bounds']['upper'])
+        self.Bayesian_dict['rate_constants_initial_guess'] = deepcopy(input_dict['rxn_rate_opt']['x0'])
+        self.Bayesian_dict['rate_constants_lower_bnds'] = deepcopy(input_dict['rxn_rate_opt']['bnds']['lower'])
+        self.Bayesian_dict['rate_constants_upper_bnds'] = deepcopy(input_dict['rxn_rate_opt']['bnds']['upper'])
         num_rate_consants = len(self.Bayesian_dict['rate_constants_initial_guess'])
         self.Bayesian_dict['rate_constants_bnds_exist'] =  np.array(np.ones((num_rate_consants, 2)), dtype = bool) #From Jan 2021, we are setting [True True] for each rate_constant.
 

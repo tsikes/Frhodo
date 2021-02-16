@@ -12,6 +12,8 @@ from scipy import stats
 
 from optimize.optimize_worker import Worker
 from optimize.fit_fcn import initialize_parallel_worker, update_mech_coef_opt
+from optimize.misc_fcns import rates
+from optimize.fit_coeffs import fit_SRI
 
 
 min_neg_system_value = np.finfo(float).min*(1E-20) # Don't push the limits too hard
@@ -109,8 +111,11 @@ class Multithread_Optimize:
             for shock_condition in shock_conditions:
                 shock_conditions[shock_condition].append(shock[shock_condition])
         
-        # Set conditions of rates to be fit for each coefficient
+        # Set conditions of rates to be fit for each coefficient and rates/bnds
         rxn_coef_opt = self._set_rxn_coef_opt(shock_conditions)
+        rxn_rate_opt = self._set_rxn_rate_opt(rxn_coef_opt)
+
+        self._update_gas(rxn_coef_opt, rxn_rate_opt)
         
         parent.multiprocessing = parent.multiprocessing_box.isChecked()
         
@@ -135,7 +140,7 @@ class Multithread_Optimize:
             parent.max_processors = 1
         
         # Pass the function to execute
-        self.worker = Worker(parent, self.shocks2run, parent.mech, coef_opt, rxn_coef_opt)
+        self.worker = Worker(parent, self.shocks2run, parent.mech, coef_opt, rxn_coef_opt, rxn_rate_opt)
         self.worker.signals.result.connect(self.on_worker_done)
         self.worker.signals.finished.connect(self.thread_complete)
         self.worker.signals.update.connect(self.update)
@@ -256,7 +261,7 @@ class Multithread_Optimize:
                     rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
                     rxn_coef['T'].append(np.divide(10000, rxn_coef['invT'][-1]))
                     
-                rxn_coef['T'].append(np.linspace(*T_bnds, 4))
+                rxn_coef['T'].append(np.linspace(*T_bnds, 5))
                 rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
 
                 rxn_coef['T'] = np.concatenate(rxn_coef['T'], axis=0)
@@ -266,6 +271,54 @@ class Multithread_Optimize:
             rxn_coef['X'] = shock_conditions['thermo_mix'][0]   # TODO: IF MIXTURE COMPOSITION FOR DUMMY RATES MATTER CHANGE HERE
 
         return rxn_coef_opt
+
+    def _set_rxn_rate_opt(self, rxn_coef_opt):
+        mech = self.parent.mech
+        rxn_rate_opt = {}
+
+        # Calculate x0 (initial rates)
+        prior_mech = mech.reset()  # reset mechanism
+        rxn_rate_opt['x0'] = rates(rxn_coef_opt, mech)
+        
+        # Determine rate bounds
+        lb = []
+        ub = []
+        i = 0
+        for rxn_coef in rxn_coef_opt:      # LB and UB are off for troe arrhenius parts
+            rxnIdx = rxn_coef['rxnIdx']
+            rate_bnds_val = mech.rate_bnds[rxnIdx]['value']
+            rate_bnds_type = mech.rate_bnds[rxnIdx]['type']
+            for T, P in zip(rxn_coef['T'], rxn_coef['P']):
+                bnds = mech.rate_bnds[rxnIdx]['limits'](np.exp(rxn_rate_opt['x0'][i]))
+                bnds = np.sort(np.log(bnds))  # operate on ln and scale
+                scaled_bnds = np.sort(bnds/rxn_rate_opt['x0'][i])
+                lb.append(scaled_bnds[0])
+                ub.append(scaled_bnds[1])
+                
+                i += 1
+        
+        rxn_rate_opt['bnds'] = {'lower': np.array(lb), 'upper': np.array(ub)}
+
+        mech.coeffs = prior_mech
+        mech.modify_reactions(mech.coeffs)
+
+        return rxn_rate_opt
+
+    def _update_gas(self, rxn_coef_opt, rxn_rate_opt): # TODO: What happens if a second optimization is run?
+        mech = self.parent.mech
+ 
+        print('gas is being altered')
+        
+        #reactions = []
+        #for rxnIdx, rxn in enumerate(mech.gas.reactions()):
+        #    if rxnIdx not in rxnsMod:
+        #        reactions.append(rxn)
+        #    else: 
+        #        print(fit_SRI(rates, T, mech.M(rxn)))
+        #        print('update rxn')
+        
+        #self.gas = ct.Solution(species=self.gas.species(), reactions=reactions,
+        #                       thermo='IdealGas', kinetics='GasKinetics')
 
     def update(self, result, writeLog=True):
         obj_fcn_str = f"{result['obj_fcn']:.3e}"

@@ -11,7 +11,7 @@ from copy import deepcopy
 
 import mech_fcns
 from convert_units import OoM
-from optimize.optimize_misc_fcns import weighted_quantile, outlier, generalized_loss_fcn
+from optimize.misc_fcns import weighted_quantile, outlier, generalized_loss_fcn
 from optimize.fit_coeffs import fit_coeffs
 from optimize.CheKiPEUQ_from_Frhodo import CheKiPEUQ_Frhodo_interface
 
@@ -204,7 +204,7 @@ class Fit_Fun:
         self.data = self.parent.series.shock
         self.coef_opt = input_dict['coef_opt']
         self.rxn_coef_opt = input_dict['rxn_coef_opt']
-        self.x0 = input_dict['x0']
+        self.x0 = input_dict['rxn_rate_opt']['x0']
         self.mech = input_dict['mech']
         self.var = self.parent.var
         self.t_unc = (-self.var['time_unc'], self.var['time_unc'])

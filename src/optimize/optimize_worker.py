@@ -9,14 +9,12 @@ from copy import deepcopy
 
 import nlopt
 import numpy as np
-import cantera as ct
 
 from timeit import default_timer as timer
 
 from optimize.fit_fcn import initialize_parallel_worker, Fit_Fun
+from optimize.misc_fcns import rates
 
-
-Ru = ct.gas_constant
 
 class Worker(QRunnable):
     '''
@@ -34,7 +32,7 @@ class Worker(QRunnable):
     
     '''
 
-    def __init__(self, parent, shocks2run, mech, coef_opt, rxn_coef_opt, *args, **kwargs):
+    def __init__(self, parent, shocks2run, mech, coef_opt, rxn_coef_opt, rxn_rate_opt, *args, **kwargs):
         super(Worker, self).__init__()
         # Store constructor arguments (re-used for processing)
         self.parent = parent
@@ -47,70 +45,20 @@ class Worker(QRunnable):
         self.shocks2run = shocks2run
         self.coef_opt = coef_opt
         self.rxn_coef_opt = rxn_coef_opt
+        self.rxn_rate_opt = rxn_rate_opt
         self.mech = mech
         self._initialize()
     
-    def _initialize(self):
-        def rates():
-            output = []
-            for rxn_coef in self.rxn_coef_opt:
-                rxnIdx = rxn_coef['rxnIdx']
-                for n, (T, P) in enumerate(zip(rxn_coef['T'], rxn_coef['P'])):
-                    mech.set_TPX(T, P)
-                    key = rxn_coef['key'][n]['coeffs']
-
-                    if type(key) is str and 'rate' in key:
-                        A = mech.coeffs[rxnIdx][key]['pre_exponential_factor']
-                        b = mech.coeffs[rxnIdx][key]['temperature_exponent']
-                        Ea = mech.coeffs[rxnIdx][key]['activation_energy']
-
-                        k = A*T**b*np.exp(-Ea/Ru/T)
-
-                        output.append(k)
-
-                    else:
-                        output.append(mech.gas.forward_rate_constants[rxnIdx])
-            
-            return np.log(output)
-        
+    def _initialize(self):        
         mech = self.mech
-
-        prior_mech = mech.reset()  # reset mechanism
-        
-        # Calculate x0
-        self.x0 = rates()
-        
-        # Determine rate bounds
-        lb = []
-        ub = []
-        unscaled_bnds = {'lower': [], 'upper': []}
-        i = 0
-        for rxn_coef in self.rxn_coef_opt:      # LB and UB are off for troe arrhenius parts
-            rxnIdx = rxn_coef['rxnIdx']
-            rate_bnds_val = mech.rate_bnds[rxnIdx]['value']
-            rate_bnds_type = mech.rate_bnds[rxnIdx]['type']
-            for T, P in zip(rxn_coef['T'], rxn_coef['P']):
-                bnds = mech.rate_bnds[rxnIdx]['limits'](np.exp(self.x0[i]))
-                bnds = np.sort(np.log(bnds))  # operate on ln and scale
-                unscaled_bnds['lower'].append(bnds[0])
-                unscaled_bnds['upper'].append(bnds[1])
-                scaled_bnds = np.sort(bnds/self.x0[i])
-                lb.append(scaled_bnds[0])
-                ub.append(scaled_bnds[1])
-                
-                i += 1
-        
-        self.unscaled_bnds = unscaled_bnds
-        self.bnds = {'lower': np.array(lb), 'upper': np.array(ub)}
-
+       
         # Calculate initial rate scalers
-        mech.coeffs = prior_mech
-        mech.modify_reactions(mech.coeffs)
-        self.s = np.divide(rates(), self.x0)
+        lb, ub = self.rxn_rate_opt['bnds'].values()
+        self.s = np.divide(rates(self.rxn_coef_opt, mech), self.rxn_rate_opt['x0']) # this initializes from current GUI settings
 
         # Correct initial rate guesses if outside bounds
-        np.putmask(self.s, self.s < lb, np.array(lb)*1.01)
-        np.putmask(self.s, self.s > ub, np.array(ub)*0.99)
+        np.putmask(self.s, self.s < lb, lb*1.01)
+        np.putmask(self.s, self.s > ub, ub*0.99)
 
     def trim_shocks(self): # trim shocks from zero weighted data
         for n, shock in enumerate(self.shocks2run):
@@ -134,11 +82,11 @@ class Worker(QRunnable):
         self.trim_shocks()  # trim shock data from zero weighted data
         
         input_dict = {'parent': parent, 'pool': pool, 'mech': self.mech, 'shocks2run': self.shocks2run,
-                      'coef_opt': self.coef_opt, 'rxn_coef_opt': self.rxn_coef_opt,
-                      'x0': self.x0, 'bounds': self.unscaled_bnds,
+                      'coef_opt': self.coef_opt, 'rxn_coef_opt': self.rxn_coef_opt, 'rxn_rate_opt': self.rxn_rate_opt,
                       'multiprocessing': parent.multiprocessing, 'signals': self.signals}
            
         Scaled_Fit_Fun = Fit_Fun(input_dict)
+        lb, ub = self.rxn_rate_opt['bnds'].values()
            
         def eval_fun(s, grad):            
             if self.__abort:
@@ -161,7 +109,7 @@ class Worker(QRunnable):
                 options = opt_options[opt_type]
                 if not options['run']: continue
                 
-                opt = nlopt.opt(options['algorithm'], np.size(self.x0))
+                opt = nlopt.opt(options['algorithm'], np.size(self.rxn_rate_opt['x0']))
                 opt.set_min_objective(eval_fun)
                 if options['stop_criteria_type'] == 'Iteration Maximum':
                     opt.set_maxeval(int(options['stop_criteria_val'])-1)
@@ -170,10 +118,10 @@ class Worker(QRunnable):
 
                 opt.set_xtol_rel(options['xtol_rel'])
                 opt.set_ftol_rel(options['ftol_rel'])
-                opt.set_lower_bounds(self.bnds['lower'])
-                opt.set_upper_bounds(self.bnds['upper'])
+                opt.set_lower_bounds(lb)
+                opt.set_upper_bounds(ub)
                 
-                initial_step = (self.bnds['upper'] - self.bnds['lower'])*options['initial_step'] 
+                initial_step = (ub - lb)*options['initial_step'] 
                 np.putmask(initial_step, s < 1, -initial_step)  # first step in direction of more variable space
                 opt.set_initial_step(initial_step)
 
@@ -189,7 +137,7 @@ class Worker(QRunnable):
                     opt.set_population(int(np.rint(default_pop_size*options['initial_pop_multiplier'])))
 
                 if options['algorithm'] is nlopt.GN_MLSL_LDS:   # if using multistart algorithm as global, set subopt
-                    sub_opt = nlopt.opt(opt_options['local']['algorithm'], np.size(self.x0))
+                    sub_opt = nlopt.opt(opt_options['local']['algorithm'], np.size(self.rxn_rate_opt['x0']))
                     sub_opt.set_initial_step(initial_step)
                     sub_opt.set_xtol_rel(options['xtol_rel'])
                     sub_opt.set_ftol_rel(options['ftol_rel'])

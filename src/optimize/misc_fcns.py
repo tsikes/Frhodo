@@ -3,7 +3,32 @@
 # directory for license and copyright information.
 
 import numpy as np
+import cantera as ct
 
+
+Ru = ct.gas_constant
+
+def rates(rxn_coef_opt, mech):
+    output = []
+    for rxn_coef in rxn_coef_opt:
+        rxnIdx = rxn_coef['rxnIdx']
+        for n, (T, P) in enumerate(zip(rxn_coef['T'], rxn_coef['P'])):
+            mech.set_TPX(T, P)
+            key = rxn_coef['key'][n]['coeffs']
+
+            if type(key) is str and 'rate' in key:
+                A = mech.coeffs[rxnIdx][key]['pre_exponential_factor']
+                b = mech.coeffs[rxnIdx][key]['temperature_exponent']
+                Ea = mech.coeffs[rxnIdx][key]['activation_energy']
+
+                k = A*T**b*np.exp(-Ea/Ru/T)
+
+                output.append(k)
+
+            else:
+                output.append(mech.gas.forward_rate_constants[rxnIdx])
+            
+    return np.log(output)
 
 def weighted_quantile(values, quantiles, weights=None, values_sorted=False, old_style=False):
     """ https://stackoverflow.com/questions/21844024/weighted-percentile-using-numpy
