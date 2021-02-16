@@ -13,7 +13,7 @@ from scipy import stats
 from optimize.optimize_worker import Worker
 from optimize.fit_fcn import initialize_parallel_worker, update_mech_coef_opt
 from optimize.misc_fcns import rates
-from optimize.fit_coeffs import fit_SRI
+from optimize.fit_coeffs import fit_SRI, fit_Troe_no_ct
 
 
 min_neg_system_value = np.finfo(float).min*(1E-20) # Don't push the limits too hard
@@ -216,6 +216,9 @@ class Multithread_Optimize:
                         rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)             # A should be positive
                     elif coefName == 'activation_energy' and coef_x0 > 0:
                         rxn_coef['coef_bnds']['lower'].append(0)                                # Ea shouldn't change sign
+                    elif type(rxn) is ct.FalloffReaction and rxn.falloff.type == 'SRI':
+                        if coefName == 0 or coefName == 4: # a, d should be positive
+                            rxn_coef['coef_bnds']['lower'].append(0)             
                     else:
                         rxn_coef['coef_bnds']['lower'].append(min_neg_system_value)
             
@@ -230,7 +233,9 @@ class Multithread_Optimize:
             lb_exist = [x != min_neg_system_value for x in rxn_coef['coef_bnds']['lower']]
             ub_exist = [x != max_pos_system_value for x in rxn_coef['coef_bnds']['upper']]
             rxn_coef['coef_bnds']['exist'] = np.array((lb_exist, ub_exist)).T
-            
+
+            print(rxn_coef['coef_bnds']['lower'])
+
             # Set evaluation rate conditions
             T_bnds = np.array([np.min(shock_conditions['T_reactor']), np.max(shock_conditions['T_reactor'])])
             if T_bnds[1] - T_bnds[0] < min_T_range:  # if T_range isn't large enough increase it
@@ -308,13 +313,35 @@ class Multithread_Optimize:
         mech = self.parent.mech
  
         print('gas is being altered')
+
+        coeffs = []
+        i = 0
+        for rxn_coef in rxn_coef_opt:
+            rxnIdx = rxn_coef['rxnIdx']
+            rxn = mech.gas.reaction(rxnIdx)
+            if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
+                continue    # arrhenius type equations don't need to be converted
+
+            T, P, X = rxn_coef['T'], rxn_coef['P'], rxn_coef['X']
+            rates = rxn_rate_opt['x0'][i:i+len(T)]
+            
+            if type(rxn) is ct.FalloffReaction:
+                print(rxn_coef['coef_x0'])
+                #print(fit_Troe_no_ct(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], coefNames = ['A', 'T3', 'T1', 'T2']))
+                print(fit_SRI(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], coefNames = ['a', 'b', 'c', 'd', 'e']))
+            else:
+                #print(fit_Troe_no_ct(rates, T, mech.M(rxn)))
+                print(fit_SRI(rates, T, mech.M(rxn)))
+            
+
+            i += len(T)
         
         #reactions = []
         #for rxnIdx, rxn in enumerate(mech.gas.reactions()):
         #    if rxnIdx not in rxnsMod:
         #        reactions.append(rxn)
         #    else: 
-        #        print(fit_SRI(rates, T, mech.M(rxn)))
+        #        
         #        print('update rxn')
         
         #self.gas = ct.Solution(species=self.gas.species(), reactions=reactions,

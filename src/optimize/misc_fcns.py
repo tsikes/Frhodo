@@ -13,8 +13,10 @@ def rates(rxn_coef_opt, mech):
     for rxn_coef in rxn_coef_opt:
         rxnIdx = rxn_coef['rxnIdx']
         for n, (T, P) in enumerate(zip(rxn_coef['T'], rxn_coef['P'])):
-            mech.set_TPX(T, P)
-            key = rxn_coef['key'][n]['coeffs']
+            if n < len(rxn_coef['key']):
+                key = rxn_coef['key'][n]['coeffs']
+            else:
+                key = None
 
             if type(key) is str and 'rate' in key:
                 A = mech.coeffs[rxnIdx][key]['pre_exponential_factor']
@@ -26,6 +28,7 @@ def rates(rxn_coef_opt, mech):
                 output.append(k)
 
             else:
+                mech.set_TPX(T, P)
                 output.append(mech.gas.forward_rate_constants[rxnIdx])
             
     return np.log(output)

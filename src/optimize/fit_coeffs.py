@@ -19,6 +19,7 @@ Ru = ct.gas_constant
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 default_SRI_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'a', 'b', 'c', 'd', 'e']
+default_Troe_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'A', 'T3', 'T1', 'T2']
 
 def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[]):
     def fit_fcn_decorator(x0, alter_idx, jac=False):               
@@ -110,12 +111,15 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
             k_0 = A_0*T**n_0*np.exp(-Ea_0/(Ru*T))
             k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
             P_r = k_0/k_inf*M
-            ln_k = np.log(d*k_inf*P_r/(1 + P_r)) + 1/(1+np.log10(P_r)**2)*logsumexp([-b/T, -T/c], b=[a, 1]) + e*np.log(T)
+            print('inside ', a,b,c,d,e)
+            np.log(a*np.exp(-b/T) + np.exp(-T/c))
+            ln_k = np.log(d*k_inf*P_r/(1 + P_r)) + 1/(1+np.log10(P_r)**2)*np.log(a*np.exp(-b/T) + np.exp(-T/c)) + e*np.log(T)
             
             return ln_k
 
         def ln_SRI_jac(T, *args):
             [Ea_0, ln_A_0, n_0, Ea_inf, ln_A_inf, n_inf, a, b, c, d, e] = set_coeffs(*args)
+            print([Ea_0, ln_A_0, n_0, Ea_inf, ln_A_inf, n_inf, a, b, c, d, e])
             A_0, A_inf = np.exp(ln_A_0), np.exp(ln_A_inf)
             k_0 = A_0*T**n_0*np.exp(-Ea_0/(Ru*T))
             k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
@@ -125,7 +129,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
      
             if (set([0, 1, 2, 3, 4, 5]) & set(alter_idx)):  # if any arrhenius variable is being altered
                 u = np.log(a*np.exp(-b/T)+np.exp(-T/c))
-                dlnk_Pr_1 = -2*u*np.log10(P_r)/(P_r*(log10(P_r)**2 + 1)**2)
+                dlnk_Pr_1 = -2*u*np.log10(P_r)/(P_r*(np.log10(P_r)**2 + 1)**2)
                 Arrhen_temp = M*T**(n_0-n_inf)/A_inf*np.exp((Ea_inf-Ea_0)/(Ru*T))
 
             if (set([0, 1, 2]) & set(alter_idx)):
@@ -144,7 +148,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
                 elif n == 2: # dlnk_dn_0
                     jac.append(dlnk_Pr*A_0*np.log(T)*Arrhen_temp)
                 elif n == 3: # dlnk_dEa_inf
-                    jac.append(-inf_temp/(Ru*T) - A_0/(R*T)*dlnk_Pr_1*Arrhen_temp)
+                    jac.append(-inf_temp/(Ru*T) - A_0/(Ru*T)*dlnk_Pr_1*Arrhen_temp)
                 elif n == 4: # dlnk_dA_inf
                     jac.append(inf_temp/A_inf + A_0/A_inf*dlnk_Pr_1*Arrhen_temp)
                 elif n == 5: # dlnk_dn_inf
@@ -160,7 +164,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
                 elif n == 10:# dlnk_de
                     jac.append(np.log(T))
 
-            jac = np.concatenate(jac, axis=1).T
+            jac = np.vstack(jac).T
             return jac
 
         if not jac:
@@ -186,8 +190,10 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
     if len(x0) < 7:
         x0[6:10] = [0.1, -500, 0.001, 1.0, 0.0] # initial guesses for fitting SRI if none exist
 
-    x[1] = np.log(x0[1])
-    x[4] = np.log(x0[4])
+    x0[1] = np.log(x0[1])
+    x0[4] = np.log(x0[4])
+
+    x0 = np.array(x0)
 
     A_idx = None
     if set(['A_0', 'A_inf']) & set(coefNames):
@@ -211,19 +217,15 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', OptimizeWarning)
-            try:
-                popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox', bounds=bnds,
-                                    jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-            except:
-                return
+            popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox', bounds=bnds,
+                                #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
     else:           
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', OptimizeWarning)
-            try:
-                popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox',
-                                    jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-            except:
-                return
+            popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox',
+                                #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
     
     if A_idx is not None:
         popt[A_idx] = np.exp(popt[A_idx])
@@ -306,6 +308,92 @@ def fit_Troe(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
     mech.coeffs[rxnIdx] = old_coeffs    # reset coeffs
 
     return coeffs
+
+def fit_Troe_no_ct(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[]):
+    def fit_fcn_decorator(x0, alter_idx):               
+        def set_coeffs(*args):
+            coeffs = x0
+            for n, idx in enumerate(alter_idx):
+                coeffs[idx] = args[n]
+            return coeffs
+        
+        def ln_Troe(T, *args):
+            [Ea_0, ln_A_0, n_0, Ea_inf, ln_A_inf, n_inf, A, T3, T1, T2] = set_coeffs(*args)
+            A_0, A_inf = np.exp(ln_A_0), np.exp(ln_A_inf)
+            k_0 = A_0*T**n_0*np.exp(-Ea_0/(Ru*T))
+            k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
+            P_r = k_0/k_inf*M
+            log_P_r = np.log10(P_r)
+            Fcent = (1-A)*np.exp(-T/T3)+A*np.exp(-T/T1)+np.exp(-T2/T)
+            log_Fcent = np.log10(Fcent)
+            C = -0.4 - 0.67*log_Fcent
+            N = 0.75 - 1.27*log_Fcent
+            f1 = (log_P_r + C)/(N - 0.14*(log_P_r + C))
+
+            ln_F = np.log(Fcent)/(1+f1**2)
+
+            ln_k = np.log(k_inf*P_r/(1 + P_r)) + ln_F
+            
+            return ln_k
+
+        return ln_Troe
+
+    ln_k = np.log(rates)
+    
+    alter_idx = []
+    for n, coefName in enumerate(default_Troe_coefNames): # ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'A', 'T3', 'T1', 'T2']
+        if coefName in coefNames:
+            alter_idx.append(n)
+    
+    if (set([0, 1, 2]) & set(alter_idx)) and len(x0) == 0:
+        a0 = np.polyfit(np.reciprocal(T[0:3]), ln_k[0:3], 1)
+        x0[0:3] = np.array([-a0[0]*Ru, np.exp(a0[1]), 0])
+
+    if (set([3, 4, 5]) & set(alter_idx)) and len(x0) < 4:
+        a0 = np.polyfit(np.reciprocal(T[3:6]), ln_k[3:6], 1)
+        x0[3:6] = np.array([-a0[0]*Ru, np.exp(a0[1]), 0])
+
+    if len(x0) < 7:
+        x0[6:9] = [0.1, 100, 1000, 10000] # initial guesses for fitting Troe if none exist
+
+    x0[1] = np.log(x0[1])
+    x0[4] = np.log(x0[4])
+
+    x0 = np.array(x0)
+
+    A_idx = None
+    if set(['A_0', 'A_inf']) & set(coefNames):
+        A_idx = np.argwhere(coefNames in ['A_0', 'A_inf'])
+
+    fit_func = fit_fcn_decorator(x0, alter_idx)
+    p0 = x0[alter_idx]
+
+    if len(bnds) > 0:
+        if A_idx is not None:
+            bnds[0][A_idx] = np.log(bnds[0][A_idx])
+            bnds[1][A_idx] = np.log(bnds[1][A_idx])
+
+        # only valid initial guesses
+        for n, val in enumerate(p0):
+            if val < bnds[0][n]:
+                p0[n] = bnds[0][n]
+            elif val > bnds[1][n]:
+                p0[n] = bnds[1][n]
+
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', OptimizeWarning)
+            popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox', bounds=bnds,
+                                jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
+    else:           
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', OptimizeWarning)
+            popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox',
+                                jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
+    
+    if A_idx is not None:
+        popt[A_idx] = np.exp(popt[A_idx])
+
+    return popt
 
 def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):    
     rxn = mech.gas.reaction(rxnIdx)
