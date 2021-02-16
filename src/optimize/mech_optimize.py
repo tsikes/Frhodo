@@ -7,6 +7,7 @@ import numpy as np
 import cantera as ct
 import multiprocessing as mp
 from copy import deepcopy
+from timeit import default_timer as timer
 
 from scipy import stats
 
@@ -209,16 +210,16 @@ class Multithread_Optimize:
             for coefNum, (key, coefName) in enumerate(zip(rxn_coef['key'], rxn_coef['coefName'])):
                 coef_x0 = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['resetVal']
                 rxn_coef['coef_x0'].append(coef_x0)
-
                 coef_limits = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['limits']()
                 if np.isnan(coef_limits).any():
                     if coefName == 'pre_exponential_factor':
                         rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)             # A should be positive
                     elif coefName == 'activation_energy' and coef_x0 > 0:
                         rxn_coef['coef_bnds']['lower'].append(0)                                # Ea shouldn't change sign
-                    elif type(rxn) is ct.FalloffReaction and rxn.falloff.type == 'SRI':
-                        if coefName == 0 or coefName == 4: # a, d should be positive
-                            rxn_coef['coef_bnds']['lower'].append(0)             
+                    elif type(rxn) is ct.FalloffReaction and coefName == 2: # c must be 0 or greater
+                        rxn_coef['coef_bnds']['lower'].append(0)
+                    elif type(rxn) is ct.FalloffReaction and coefName == 3: # d must be positive value
+                        rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)  
                     else:
                         rxn_coef['coef_bnds']['lower'].append(min_neg_system_value)
             
@@ -233,8 +234,6 @@ class Multithread_Optimize:
             lb_exist = [x != min_neg_system_value for x in rxn_coef['coef_bnds']['lower']]
             ub_exist = [x != max_pos_system_value for x in rxn_coef['coef_bnds']['upper']]
             rxn_coef['coef_bnds']['exist'] = np.array((lb_exist, ub_exist)).T
-
-            print(rxn_coef['coef_bnds']['lower'])
 
             # Set evaluation rate conditions
             T_bnds = np.array([np.min(shock_conditions['T_reactor']), np.max(shock_conditions['T_reactor'])])
@@ -311,8 +310,6 @@ class Multithread_Optimize:
 
     def _update_gas(self, rxn_coef_opt, rxn_rate_opt): # TODO: What happens if a second optimization is run?
         mech = self.parent.mech
- 
-        print('gas is being altered')
 
         coeffs = []
         i = 0
@@ -325,14 +322,18 @@ class Multithread_Optimize:
             T, P, X = rxn_coef['T'], rxn_coef['P'], rxn_coef['X']
             rates = rxn_rate_opt['x0'][i:i+len(T)]
             
+            start = timer()
+
             if type(rxn) is ct.FalloffReaction:
                 print(rxn_coef['coef_x0'])
                 #print(fit_Troe_no_ct(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], coefNames = ['A', 'T3', 'T1', 'T2']))
                 print(fit_SRI(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], coefNames = ['a', 'b', 'c', 'd', 'e']))
+                print('gimme da bounds')
             else:
                 #print(fit_Troe_no_ct(rates, T, mech.M(rxn)))
                 print(fit_SRI(rates, T, mech.M(rxn)))
             
+            print(timer()-start)
 
             i += len(T)
         
