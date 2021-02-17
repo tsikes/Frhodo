@@ -216,24 +216,36 @@ class Multithread_Optimize:
                         rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)             # A should be positive
                     elif coefName == 'activation_energy' and coef_x0 > 0:
                         rxn_coef['coef_bnds']['lower'].append(0)                                # Ea shouldn't change sign
-                    elif type(rxn) is ct.FalloffReaction and coefName == 2: # c must be 0 or greater
-                        rxn_coef['coef_bnds']['lower'].append(0)
-                    elif type(rxn) is ct.FalloffReaction and coefName == 3: # d must be positive value
-                        rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)  
-                    else:
+                    elif not isinstance(coefName, int):     # ints will be falloff, they will be taken care of below
                         rxn_coef['coef_bnds']['lower'].append(min_neg_system_value)
             
                     if coefName == 'activation_energy' and coef_x0 < 0:   # Ea shouldn't change sign
                         rxn_coef['coef_bnds']['upper'].append(0)
-                    else:
+                    elif not isinstance(coefName, int):
                         rxn_coef['coef_bnds']['upper'].append(max_pos_system_value)
                 else:
                     rxn_coef['coef_bnds']['lower'].append(coef_limits[0])
                     rxn_coef['coef_bnds']['upper'].append(coef_limits[1])
+            
+            if type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
+                for SRI_coef in ['a', 'b', 'c', 'd', 'e']:
+                    if SRI_coef == 'c': # c must be 0 or greater
+                        rxn_coef['coef_bnds']['lower'].append(10000/np.log(max_pos_system_value))   # needs to be large enough for exp(T/c) to not blow up
+                    elif SRI_coef == 'd': # d must be positive value
+                        rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)  
+                    else:
+                        rxn_coef['coef_bnds']['lower'].append(min_neg_system_value)
+                    
+                    if SRI_coef == 'b':
+                        rxn_coef['coef_bnds']['upper'].append(np.log(max_pos_system_value))
+                    else:
+                        rxn_coef['coef_bnds']['upper'].append(max_pos_system_value)
 
             lb_exist = [x != min_neg_system_value for x in rxn_coef['coef_bnds']['lower']]
             ub_exist = [x != max_pos_system_value for x in rxn_coef['coef_bnds']['upper']]
             rxn_coef['coef_bnds']['exist'] = np.array((lb_exist, ub_exist)).T
+            rxn_coef['coef_bnds']['lower'] = np.array(rxn_coef['coef_bnds']['lower'])
+            rxn_coef['coef_bnds']['upper'] = np.array(rxn_coef['coef_bnds']['upper'])
 
             # Set evaluation rate conditions
             T_bnds = np.array([np.min(shock_conditions['T_reactor']), np.max(shock_conditions['T_reactor'])])
@@ -253,13 +265,13 @@ class Multithread_Optimize:
                 rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
                 rxn_coef['P'] = np.ones_like(rxn_coef['T'])*P
 
-            elif type(rxn) is ct.FalloffReaction:
+            elif type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
                 rxn_coef['T'] = []
                 rxn_coef['invT'] = []
                 for coef_type in ['low_rate', 'high_rate']:
                     n_coef = 0
                     for coef in rxn_coef['key']:
-                        if coef_type in coef['coeffs']:
+                        if coef_type in coef['coeffs_bnds']:
                             n_coef += 1
                    
                     rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
@@ -320,19 +332,21 @@ class Multithread_Optimize:
                 continue    # arrhenius type equations don't need to be converted
 
             T, P, X = rxn_coef['T'], rxn_coef['P'], rxn_coef['X']
-            rates = rxn_rate_opt['x0'][i:i+len(T)]
+            rates = np.exp(rxn_rate_opt['x0'][i:i+len(T)])
             
+            # TODO: NEED MULTIPLE CONCENTRATIONS/PRESSURES FOR FALLOFF, M must take T, P, X
             start = timer()
-
+            print(rxn_coef['coef_x0'])
             if type(rxn) is ct.FalloffReaction:
-                print(rxn_coef['coef_x0'])
-                #print(fit_Troe_no_ct(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], coefNames = ['A', 'T3', 'T1', 'T2']))
-                print(fit_SRI(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], coefNames = ['a', 'b', 'c', 'd', 'e']))
-                print('gimme da bounds')
+                lb = rxn_coef['coef_bnds']['lower'][6:]
+                ub = rxn_coef['coef_bnds']['upper'][6:]
+                rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], 
+                                                  coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub])
             else:
-                #print(fit_Troe_no_ct(rates, T, mech.M(rxn)))
-                print(fit_SRI(rates, T, mech.M(rxn)))
-            
+                lb = rxn_coef['coef_bnds']['lower']
+                ub = rxn_coef['coef_bnds']['upper']
+                rxn_coef['coef_x0'] = fit_SRI(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'], bnds=[lb, ub])
+            print(rxn_coef['coef_x0'])
             print(timer()-start)
 
             i += len(T)

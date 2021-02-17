@@ -14,14 +14,15 @@ def rates(rxn_coef_opt, mech):
         rxnIdx = rxn_coef['rxnIdx']
         for n, (T, P) in enumerate(zip(rxn_coef['T'], rxn_coef['P'])):
             if n < len(rxn_coef['key']):
-                key = rxn_coef['key'][n]['coeffs']
+                coeffs_key = rxn_coef['key'][n]['coeffs']
+                coeffs_bnds_key = rxn_coef['key'][n]['coeffs_bnds']
             else:
-                key = None
+                coeffs_bnds_key = coeffs_key = None           
 
-            if type(key) is str and 'rate' in key:
-                A = mech.coeffs[rxnIdx][key]['pre_exponential_factor']
-                b = mech.coeffs[rxnIdx][key]['temperature_exponent']
-                Ea = mech.coeffs[rxnIdx][key]['activation_energy']
+            if type(coeffs_bnds_key) is str and 'rate' in coeffs_bnds_key:
+                A = mech.coeffs[rxnIdx][coeffs_key]['pre_exponential_factor']
+                b = mech.coeffs[rxnIdx][coeffs_key]['temperature_exponent']
+                Ea = mech.coeffs[rxnIdx][coeffs_key]['activation_energy']
 
                 k = A*T**b*np.exp(-Ea/Ru/T)
 

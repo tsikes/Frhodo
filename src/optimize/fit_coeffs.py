@@ -116,8 +116,8 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
             #F = (a*np.exp(-b/T) + np.exp(-T/c))**n*d*np.exp(-e/T)
             #k = k_inf*P_r/(1 + P_r)*F
             #ln_k = np.log(k)
-
-            ln_k = np.log(d*k_inf*P_r/(1 + P_r)) + 1/(1+np.log10(P_r)**2)*np.log(a*np.exp(-b/T) + np.exp(-T/c)) - e/T
+            
+            ln_k = np.log(d*k_inf*P_r/(1 + P_r)) + 1/(1+np.log10(P_r)**2)*np.log(a*np.exp(-b/T) + np.exp(-T/c)) - e/T # TODO: ineq constraint that a*np.exp(-b/T) + np.exp(-T/c) > 0
             
             return ln_k
 
@@ -135,7 +135,6 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
                 u = np.log(a*np.exp(-b/T)+np.exp(-T/c))
                 log_conv = np.log10(np.exp(1))**2
                 ln_P_r_term = 2*u*log_conv*np.log(P_r)/(1 + log_conv*np.log(P_r)**2)**2 # might not need log conversion?
-
 
             if (set([0, 1, 2]) & set(alter_idx)):
                 k_0_term = P_r_frac - ln_P_r_term
@@ -192,7 +191,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
         x0[3:6] = np.array([-a0[0]*Ru, np.exp(a0[1]), 0])
 
     if len(x0) < 7:
-        x0[6:10] = [1.0, 1.0, 100, 1.0, 0.1] # initial guesses for fitting SRI if none exist
+        x0[6:10] = [1.0, 10.0, 1000, 1.0, 1.0] # initial guesses for fitting SRI if none exist
 
     x0[1] = np.log(x0[1])
     x0[4] = np.log(x0[4])
@@ -201,7 +200,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
 
     A_idx = None
     if set(['A_0', 'A_inf']) & set(coefNames):
-        A_idx = np.argwhere(coefNames in ['A_0', 'A_inf'])
+        A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
 
     fit_func = fit_fcn_decorator(x0, alter_idx)
     fit_func_jac = fit_fcn_decorator(x0, alter_idx, jac=True)

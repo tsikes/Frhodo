@@ -510,7 +510,7 @@ class Chemical_Mechanism:
         return output
 
     def M(self, rxn):
-        if not rxn.efficiencies:
+        if not hasattr(rxn, 'efficiencies') or not rxn.efficiencies:
             M = 1/self.gas.density_mole
         else:
             M = 0
