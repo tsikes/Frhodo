@@ -509,16 +509,30 @@ class Chemical_Mechanism:
         output['success'] = True
         return output
 
-    def M(self, rxn):
-        if not hasattr(rxn, 'efficiencies') or not rxn.efficiencies:
-            M = 1/self.gas.density_mole
+    def M(self, rxn, TPX=[]):
+        def get_M(rxn):
+            if not hasattr(rxn, 'efficiencies') or not rxn.efficiencies:
+                M = 1/self.gas.density_mole
+            else:
+                M = 0
+                for (s, conc) in zip(self.gas.species_names, self.gas.concentrations):
+                    if s in rxn.efficiencies:
+                        M += conc*rxn.efficiencies[s]
+                    else:
+                        M += conc
+            return M
+
+        if len(TPX) == 0:
+            M = get_M(rxn)
         else:
-            M = 0
-            for (s, conc) in zip(self.gas.species_names, self.gas.concentrations):
-                if s in rxn.efficiencies:
-                    M += conc*rxn.efficiencies[s]
-                else:
-                    M += conc
+            [T, P, X] = TPX
+            M = []
+            for i in range(0, len(T)):
+                self.set_TPX(T[i], P[i], X) # IF MIXTURE CHANGES THEN THIS NEEDS TO BE VARIABLE
+                M.append(get_M(rxn))
+            
+            M = np.array(M)
+
         return M
 
     def run(self, reactor_choice, t_end, T_reac, P_reac, mix, **kwargs):

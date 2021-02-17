@@ -229,7 +229,9 @@ class Multithread_Optimize:
             
             if type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
                 for SRI_coef in ['a', 'b', 'c', 'd', 'e']:
-                    if SRI_coef == 'c': # c must be 0 or greater
+                    if SRI_coef == 'a': # this restriction isn't stricly necessary but can run into issues with log(-val) without
+                        rxn_coef['coef_bnds']['lower'].append(0)  
+                    elif SRI_coef == 'c': # c must be 0 or greater
                         rxn_coef['coef_bnds']['lower'].append(10000/np.log(max_pos_system_value))   # needs to be large enough for exp(T/c) to not blow up
                     elif SRI_coef == 'd': # d must be positive value
                         rxn_coef['coef_bnds']['lower'].append(min_pos_system_value)  
@@ -257,7 +259,15 @@ class Multithread_Optimize:
                     T_bnds[0] = 298.15
 
             invT_bnds = np.divide(10000, T_bnds)
-            P = np.median(shock_conditions['P_reactor'])
+            
+            if type(rxn) is ct.PlogReaction:
+                P = []
+                for PlogRxn in mech.coeffs[rxnIdx]:
+                    P.append(PlogRxn['Pressure'])
+                P = np.median(P)
+                P_bnds = [np.min(P), np.max(P)]
+            else:
+                P = np.median(shock_conditions['P_reactor'])
 
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 n_coef = len(rxn_coef['coefIdx'])
@@ -268,6 +278,7 @@ class Multithread_Optimize:
             elif type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
                 rxn_coef['T'] = []
                 rxn_coef['invT'] = []
+                rxn_coef['P'] = []
                 for coef_type in ['low_rate', 'high_rate']:
                     n_coef = 0
                     for coef in rxn_coef['key']:
@@ -276,13 +287,22 @@ class Multithread_Optimize:
                    
                     rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
                     rxn_coef['T'].append(np.divide(10000, rxn_coef['invT'][-1]))
+                    if coef_type == 'low_rate':
+                        rxn_coef['P'].append(np.ones(n_coef)*1E-4) # Doesn't matter, will evaluate LPL and HPL
+                    elif coef_type == 'high_rate':
+                        rxn_coef['P'].append(np.ones(n_coef)*1E10) # Doesn't matter, will evaluate LPL and HPL
                     
                 rxn_coef['T'].append(np.linspace(*T_bnds, 5))
                 rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
 
+                if type(rxn) is ct.PlogReaction:
+                    rxn_coef['P'].append(np.linspace(*P_bnds, 5))
+                else:
+                    rxn_coef['P'].append(np.ones(5)*P) # Doesn't matter, will evaluate median P for falloff
+
                 rxn_coef['T'] = np.concatenate(rxn_coef['T'], axis=0)
                 rxn_coef['invT'] = np.concatenate(rxn_coef['invT'], axis=0)
-                rxn_coef['P'] = np.ones_like(rxn_coef['T'])*P # Doesn't matter, will evaluate LPL and HPL for arrhenius and median P for falloff
+                rxn_coef['P'] = np.concatenate(rxn_coef['P'], axis=0)
 
             rxn_coef['X'] = shock_conditions['thermo_mix'][0]   # TODO: IF MIXTURE COMPOSITION FOR DUMMY RATES MATTER CHANGE HERE
 
@@ -332,21 +352,20 @@ class Multithread_Optimize:
                 continue    # arrhenius type equations don't need to be converted
 
             T, P, X = rxn_coef['T'], rxn_coef['P'], rxn_coef['X']
+            M = mech.M(rxn, [T, P, X])
             rates = np.exp(rxn_rate_opt['x0'][i:i+len(T)])
             
             # TODO: NEED MULTIPLE CONCENTRATIONS/PRESSURES FOR FALLOFF, M must take T, P, X
             start = timer()
-            print(rxn_coef['coef_x0'])
             if type(rxn) is ct.FalloffReaction:
                 lb = rxn_coef['coef_bnds']['lower'][6:]
                 ub = rxn_coef['coef_bnds']['upper'][6:]
-                rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'][0:6], 
+                rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'][0:6], 
                                                   coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub])
             else:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
-                rxn_coef['coef_x0'] = fit_SRI(rates, T, mech.M(rxn), x0=rxn_coef['coef_x0'], bnds=[lb, ub])
-            print(rxn_coef['coef_x0'])
+                rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub])
             print(timer()-start)
 
             i += len(T)

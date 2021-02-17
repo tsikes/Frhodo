@@ -98,6 +98,8 @@ def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[
     return popt
 
 def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
+    scipy_curvefit = True
+
     def fit_fcn_decorator(x0, alter_idx, jac=False):               
         def set_coeffs(*args):
             coeffs = x0
@@ -116,7 +118,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
             #F = (a*np.exp(-b/T) + np.exp(-T/c))**n*d*np.exp(-e/T)
             #k = k_inf*P_r/(1 + P_r)*F
             #ln_k = np.log(k)
-            
+
             ln_k = np.log(d*k_inf*P_r/(1 + P_r)) + 1/(1+np.log10(P_r)**2)*np.log(a*np.exp(-b/T) + np.exp(-T/c)) - e/T # TODO: ineq constraint that a*np.exp(-b/T) + np.exp(-T/c) > 0
             
             return ln_k
@@ -201,7 +203,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
     A_idx = None
     if set(['A_0', 'A_inf']) & set(coefNames):
         A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
-
+    
     fit_func = fit_fcn_decorator(x0, alter_idx)
     fit_func_jac = fit_fcn_decorator(x0, alter_idx, jac=True)
     p0 = x0[alter_idx]
@@ -218,22 +220,44 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[]):
             elif val > bnds[1][n]:
                 p0[n] = bnds[1][n]
 
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', OptimizeWarning)
-            popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox', bounds=bnds,
-                                jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-                                #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
-    else:           
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', OptimizeWarning)
-            popt, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox',
-                                jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-                                #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
-    
-    if A_idx is not None:
-        popt[A_idx] = np.exp(popt[A_idx])
+    if scipy_curvefit:
+        if len(bnds) > 0:
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', OptimizeWarning)
+                x, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox', bounds=bnds,
+                                    jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                    #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
+        else:           
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', OptimizeWarning)
+                x, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox',
+                                    jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                    #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
 
-    return popt
+    else:
+        s = fit_fcn_decorator(x0, alter_idx, jac=True)(T, *x0)
+        s = 1/np.linalg.norm(s, axis=1)
+
+        scaled_eqn = lambda x, grad: generalized_loss_fcn(fit_func(T, *x) - ln_k).sum()
+        
+        opt = nlopt.opt(nlopt.LN_SBPLX, len(alter_idx)) # either nlopt.LN_SBPLX or nlopt.LN_COBYLA
+
+        opt.set_min_objective(scaled_eqn)
+        #opt.set_maxeval(int(options['stop_criteria_val'])-1)
+        #opt.set_maxtime(options['stop_criteria_val']*60)
+
+        opt.set_xtol_rel(1E-2)
+        opt.set_ftol_rel(1E-2)
+        opt.set_lower_bounds(bnds[0])
+        opt.set_upper_bounds(bnds[1])
+
+        #opt.set_initial_step(1E-1)
+        x = opt.optimize(p0) # optimize!
+
+    if A_idx is not None:
+        x[A_idx] = np.exp(x[A_idx])
+
+    return x
 
 def fit_Troe(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
     def fit_rate_eqn(ln_k, P, X, mech, key, coefNames, rxnIdx):
