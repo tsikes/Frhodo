@@ -7,6 +7,10 @@ import cantera as ct
 
 
 Ru = ct.gas_constant
+min_neg_system_value = np.finfo(float).min*(1E-20) # Don't push the limits too hard
+min_pos_system_value = np.finfo(float).eps*(1.1)
+max_pos_system_value = np.finfo(float).max*(1E-20)
+
 
 def rates(rxn_coef_opt, mech):
     output = []
@@ -119,3 +123,60 @@ def generalized_loss_fcn(x, mu=0, a=2, c=1):    # defaults to L2 loss
         loss = np.abs(a-2)/a*((x_c_2/np.abs(a-2) + 1)**(a/2) - 1)
 
     return loss*c_2 + mu  # multiplying by c^2 is not necessary, but makes order appropriate
+
+def set_bnds(mech, rxnIdx, keys, coefNames):
+    rxn = mech.gas.reaction(rxnIdx)
+    coef_bnds = {'lower': [], 'upper': [], 'exist': []}
+            
+    for coefNum, (key, coefName) in enumerate(zip(keys, coefNames)):
+        coef_x0 = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['resetVal']
+        coef_limits = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['limits']()
+
+        if np.isnan(coef_limits).any():
+            coef_bnds['exist'].append([False, False])
+            # set lower bnds
+            if coefName == 'activation_energy':
+                if coef_x0 > 0:
+                    coef_bnds['lower'].append(0)                                # Ea shouldn't change sign
+                else:
+                    coef_bnds['lower'].append(-Ru*10000*np.log(max_pos_system_value))
+            elif coefName == 'pre_exponential_factor':
+                coef_bnds['lower'].append(min_pos_system_value)             # A should be positive
+            elif not isinstance(coefName, int):     # ints will be falloff, they will be taken care of below
+                coef_bnds['lower'].append(min_neg_system_value)
+                    
+            # set upper bnds
+            if coefName == 'activation_energy' and coef_x0 < 0:   # Ea shouldn't change sign
+                coef_bnds['upper'].append(0)
+            elif coefName == 'temperature_exponent':
+                coef_bnds['upper'].append(np.log(max_pos_system_value)/np.log(298.15))
+            elif not isinstance(coefName, int):
+                coef_bnds['upper'].append(max_pos_system_value)
+        else:
+            coef_bnds['lower'].append(coef_limits[0])
+            coef_bnds['upper'].append(coef_limits[1])
+            coef_bnds['exist'].append([True, True])
+            
+    if type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
+        for SRI_coef in ['a', 'b', 'c', 'd', 'e']:
+            coef_bnds['exist'].append([False, False])
+
+            if SRI_coef == 'a': # this restriction isn't stricly necessary but can run into issues with log(-val) without
+                coef_bnds['lower'].append(0)  
+            elif SRI_coef == 'c': # c must be 0 or greater
+                coef_bnds['lower'].append(10000/np.log(max_pos_system_value))   # needs to be large enough for exp(T/c) to not blow up
+            elif SRI_coef == 'd': # d must be positive value
+                coef_bnds['lower'].append(min_pos_system_value)  
+            else:
+                coef_bnds['lower'].append(min_neg_system_value)
+                    
+            if SRI_coef == 'b':
+                coef_bnds['upper'].append(np.log(max_pos_system_value))
+            else:
+                coef_bnds['upper'].append(max_pos_system_value)
+
+    coef_bnds['exist'] = np.array(coef_bnds['exist'])
+    coef_bnds['lower'] = np.array(coef_bnds['lower'])
+    coef_bnds['upper'] = np.array(coef_bnds['upper'])
+
+    return coef_bnds
