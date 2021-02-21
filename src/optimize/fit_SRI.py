@@ -57,29 +57,22 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
             if (set([0, 1, 2, 3, 4, 5]) & set(alter_idx)):  # if any arrhenius variable is being altered
                 P_r_frac = 1/(1 + P_r)
                 u = np.log(a*np.exp(-b/T)+np.exp(-T/c))
-                log_conv = np.log10(np.exp(1))**2
-                ln_P_r_term = 2*u*log_conv*np.log(P_r)/(1 + log_conv*np.log(P_r)**2)**2 # might not need log conversion?
-
-            if (set([0, 1, 2]) & set(alter_idx)):
-                k_0_term = P_r_frac - ln_P_r_term
-
-            if (set([3, 4, 5]) & set(alter_idx)):
-                k_inf_term = 1 - P_r_frac + ln_P_r_term
+                ln_P_r_term = P_r_frac - 2*u*np.log10(P_r)/(1 + np.log10(P_r)**2)**2 # might not need log conversion?
 
             jac = []
             for n in alter_idx:
                 if n == 0:   # dlnk_dEa_0
-                    jac.append(-1/(Ru*T)*k_0_term)
+                    jac.append(-1/(Ru*T)*ln_P_r_term)
                 elif n == 1: # dlnk_dA_0
-                    jac.append(1/A_0*k_0_term)
+                    jac.append(1/A_0*ln_P_r_term)
                 elif n == 2: # dlnk_dn_0
-                    jac.append(np.log(T)*k_0_term)
+                    jac.append(np.log(T)*ln_P_r_term)
                 elif n == 3: # dlnk_dEa_inf
-                    jac.append(-1/(Ru*T)*k_inf_term)
+                    jac.append(1/(Ru*T)*ln_P_r_term)
                 elif n == 4: # dlnk_dA_inf
-                    jac.append(1/A_0*k_inf_term)
+                    jac.append(-1/A_inf*ln_P_r_term)
                 elif n == 5: # dlnk_dn_inf
-                    jac.append(np.log(T)*k_inf_term)
+                    jac.append(-np.log(T)*ln_P_r_term)
                 elif n == 6: # dlnk_da
                     jac.append(np.exp(T/c)*abc)
                 elif n == 7: # dlnk_db
@@ -132,8 +125,8 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
 
     if len(x0) < 7:
         #x0[6:10] = [1.0, 10.0, 1000, 1.0, 1.0] # initial guesses for fitting SRI if none exist
-        x0[6:10] = [1.0, -100.0, 1000, 1.0, 0.0] # initial guesses for fitting SRI if none exist
-        #x0[6:10] = [1.0, -1.0, 100.0, 1.0, 0.01] # initial guesses for fitting SRI if none exist
+        #x0[6:10] = [1.0, -100.0, 1000, 1.0, 0.0] # initial guesses for fitting SRI if none exist
+        x0[6:10] = [1.0, -1.0, 100.0, 1.0, 0.01] # initial guesses for fitting SRI if none exist
 
     x0[1] = np.log(x0[1])
     x0[4] = np.log(x0[4])
