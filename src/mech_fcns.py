@@ -400,14 +400,11 @@ class Chemical_Mechanism:
                                 setattr(rxn, key, ct.Arrhenius(A, b, Ea))
                                 break
                     else:
-                        if (coeffs[rxnNum][key] != rxn.falloff.parameters).any():
-                            #if rxn.falloff.type != 'SRI':
-                            #    rxns_to_SRI[rxnNum] = 'SRI'
-                            #    continue
+                        length_different = len(coeffs[rxnNum][key]) != len(rxn.falloff.parameters)
+                        if length_different or (coeffs[rxnNum][key] != rxn.falloff.parameters).any():
+                            rxnChanged = True
 
-                            #rxnChanged = True
-
-                            if rxn.falloff.type == 'Troe':
+                            if coeffs[rxnNum]['falloff_type'] == 'Troe':
                                 rxn.falloff = ct.TroeFalloff(coeffs[rxnNum][key])
                             else:   # could also be SRI. For optimization this would need to be cast as Troe
                                 rxn.falloff = ct.SriFalloff(coeffs[rxnNum][key])
@@ -423,7 +420,7 @@ class Chemical_Mechanism:
         #if len(rxns_to_SRI) > 0:    # cast pressure dependent reaction types as SRI
         #    self.update_gas(rxns_to_SRI)
 
-        time.sleep(5E-3)        # Not sure if this is necessary, but it reduces strange behavior in incident shock reactor
+        #time.sleep(5E-3)        # Not sure if this is necessary, but it reduces strange behavior in incident shock reactor
     
     def modify_thermo(self, multipliers):  # Only works for NasaPoly2 (NASA 7) currently
         for i in range(np.shape(self.gas.species_names)[0]):
@@ -478,6 +475,7 @@ class Chemical_Mechanism:
                         self.coeffs[rxnIdx][-1][coefName] = self.reset_mech[rxnIdx]['rxnCoeffs'][-1][coefName]
 
             elif 'Falloff Reaction' == self.reset_mech[rxnIdx]['rxnType']:
+                self.coeffs[rxnIdx]['falloff_type'] = self.reset_mech[rxnIdx]['falloffType']
                 for [limit_type, coefName] in coefNames:
                     self.coeffs[rxnIdx][limit_type][coefName] = self.reset_mech[rxnIdx]['rxnCoeffs'][limit_type][coefName]
 
@@ -509,15 +507,14 @@ class Chemical_Mechanism:
         output['success'] = True
         return output
 
-    def M(self, rxn, TPX=[]):
+    def M(self, rxn, TPX=[]):   # kmol/m^3
         def get_M(rxn):
-            if not hasattr(rxn, 'efficiencies') or not rxn.efficiencies:
-                M = 1/self.gas.density_mole
-            else:
-                M = 0
+            M = self.gas.density_mole
+            if hasattr(rxn, 'efficiencies') and rxn.efficiencies:
+                M *= rxn.default_efficiency
                 for (s, conc) in zip(self.gas.species_names, self.gas.concentrations):
                     if s in rxn.efficiencies:
-                        M += conc*rxn.efficiencies[s]
+                        M += conc*(rxn.efficiencies[s] - 1.0)
                     else:
                         M += conc
             return M

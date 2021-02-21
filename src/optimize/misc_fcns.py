@@ -11,6 +11,7 @@ min_neg_system_value = np.finfo(float).min*(1E-20) # Don't push the limits too h
 min_pos_system_value = np.finfo(float).eps*(1.1)
 max_pos_system_value = np.finfo(float).max*(1E-20)
 
+default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 
 def rates(rxn_coef_opt, mech):
     output = []
@@ -129,6 +130,8 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
     coef_bnds = {'lower': [], 'upper': [], 'exist': []}
             
     for coefNum, (key, coefName) in enumerate(zip(keys, coefNames)):
+        if coefName not in default_arrhenius_coefNames: continue    # skip anything not Arrhenius. Falloff follows this
+
         coef_x0 = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['resetVal']
         coef_limits = mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][coefName]['limits']()
 

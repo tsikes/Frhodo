@@ -18,6 +18,8 @@ from optimize.fit_coeffs import fit_Troe_no_ct
 from optimize.fit_SRI import fit_SRI
 
 
+default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
+
 class Multithread_Optimize:
     def __init__(self, parent):
         self.parent = parent
@@ -247,7 +249,7 @@ class Multithread_Optimize:
                     rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
                     rxn_coef['T'].append(np.divide(10000, rxn_coef['invT'][-1]))
                     if coef_type == 'low_rate':
-                        rxn_coef['P'].append(np.ones(n_coef)*1E-4) # Doesn't matter, will evaluate LPL and HPL
+                        rxn_coef['P'].append(np.ones(n_coef)*1E-1) # Doesn't matter, will evaluate LPL and HPL
                     elif coef_type == 'high_rate':
                         rxn_coef['P'].append(np.ones(n_coef)*1E10) # Doesn't matter, will evaluate LPL and HPL
                     
@@ -302,46 +304,92 @@ class Multithread_Optimize:
     def _update_gas(self, rxn_coef_opt, rxn_rate_opt): # TODO: What happens if a second optimization is run?
         mech = self.parent.mech
 
+        rxns_changed = []
         coeffs = []
         i = 0
-        for rxn_coef in rxn_coef_opt:
+        for rxn_coef_idx, rxn_coef in enumerate(rxn_coef_opt):
             rxnIdx = rxn_coef['rxnIdx']
             rxn = mech.gas.reaction(rxnIdx)
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
                 continue    # arrhenius type equations don't need to be converted
 
+            rxns_changed.append(rxn_coef['rxnIdx'])
             T, P, X = rxn_coef['T'], rxn_coef['P'], rxn_coef['X']
             M = mech.M(rxn, [T, P, X])
             rates = np.exp(rxn_rate_opt['x0'][i:i+len(T)])
             
-            # TODO: NEED MULTIPLE CONCENTRATIONS/PRESSURES FOR FALLOFF, M must take T, P, X
-            for fit_bool in [True, False]:
-                start = timer()
-                if type(rxn) is ct.FalloffReaction:
-                    lb = rxn_coef['coef_bnds']['lower'][6:]
-                    ub = rxn_coef['coef_bnds']['upper'][6:]
-                    rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'][0:6], 
-                                                      coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=fit_bool)
-                else:
-                    lb = rxn_coef['coef_bnds']['lower']
-                    ub = rxn_coef['coef_bnds']['upper']
-                    rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], scipy_curvefit=fit_bool)
-                print(timer()-start)
-                print(rxn_coef['coef_x0'])
-                print('')
+            if type(rxn) is ct.FalloffReaction:
+                lb = rxn_coef['coef_bnds']['lower'][6:]
+                ub = rxn_coef['coef_bnds']['upper'][6:]
+                if rxn.falloff.type == 'Troe':
+                    rxn_coef['coef_x0'][6:] = fit_SRI(rates[6:], T[6:], M[6:], x0=rxn_coef['coef_x0'][0:6], 
+                                                    coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
+                else:   # This is for testing, it's not really needed
+                    rxn_coef['coef_x0'][6:] = fit_SRI(rates[6:], T[6:], M[6:], x0=rxn_coef['coef_x0'], 
+                                                    coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
+
+                mech.coeffs[rxnIdx]['falloff_type'] = 'SRI'
+                mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
+
+            else:
+                lb = rxn_coef['coef_bnds']['lower']
+                ub = rxn_coef['coef_bnds']['upper']
+                rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], scipy_curvefit=True)
+
+                rxn_coef['coefIdx'].extend(range(0, 5)) # extend to include falloff coefficients
+                rxn_coef['coefName'].extend(range(0, 5)) # extend to include falloff coefficients
+                rxn_coef['key'].extend([{'coeffs': 'falloff_parameters', 'coeffs_bnds': 'falloff_parameters'} for i in range(0, 5)])
+
+                # modify mech.coeffs from plog to falloff
+                mech.coeffs[rxnIdx] = {'falloff_type': 'SRI', 'high_rate': {}, 'low_rate': {}, 'falloff_parameters': rxn_coef['coef_x0'][6:], 
+                        'default_efficiency': 1.0, 'efficiencies': {}}
+
+                n = 0
+                for key in ['low_rate', 'high_rate']:
+                    for coefName in default_arrhenius_coefNames:
+                        rxn_coef['key'][n]['coeffs'] = key                          # change key value to match new reaction type
+                        mech.coeffs[rxnIdx][key][coefName] = rxn_coef['coef_x0'][n] # updates new arrhenius values
+
+                        n += 1
+
+                # modify rxn_coef_opt from plog to falloff
+
+                #for bndsKey, subRxn in mech.coeffs_bnds[rxnIdx].items():
+                #    for coefIdx, (coefName, coefDict) in enumerate(subRxn.items()):
+                #        if coefDict['opt']:
+                #            coefKey, bndsKey = mech.get_coeffs_keys(rxn, bndsKey, rxnIdx=rxnIdx)
+                #            coef_opt.append({'rxnIdx': rxnIdx, 'key': {'coeffs': coefKey, 'coeffs_bnds': bndsKey}, 
+                #                             'coefIdx': coefIdx, 'coefName': coefName})
+
+                #rxn_coef_opt[rxn_coef_idx]['key'] = [rxn_coef_opt[-1]['key']]
+                #rxn_coef_opt[rxn_coef_idx]['coefIdx'] = [rxn_coef_opt[-1]['coefIdx']]
+                #rxn_coef_opt[rxn_coef_idx]['coefName'] = [rxn_coef_opt[-1]['coefName']]
+
+                #rxn_coef_opt[-1]['key'].append(coef['key'])
+                #rxn_coef_opt[-1]['coefIdx'].append(coef['coefIdx'])
+                #rxn_coef_opt[-1]['coefName'].append(coef['coefName'])
 
             i += len(T)
+
+        reactions = []
+        generate_new_mech = False
+        for rxnIdx, rxn in enumerate(mech.gas.reactions()):
+            if rxnIdx not in rxns_changed:
+                reactions.append(rxn)
+                continue
+
+            if type(rxn) is ct.FalloffReaction:   # this means input reaction is falloff
+                if rxn.falloff.type == 'Troe':
+                    rxn.falloff = ct.SriFalloff(mech.coeffs[rxnIdx]['falloff_parameters'])
+
+            elif type(rxn) is ct.PlogReaction: # only need to generate a new mech if going from Plog -> SRI
+                #generate_new_mech = True
+                for param_type in ['low_rate', 'high_rate', 'falloff_parameters']:
+                    print(mech.coeffs[rxnIdx][param_type])
         
-        #reactions = []
-        #for rxnIdx, rxn in enumerate(mech.gas.reactions()):
-        #    if rxnIdx not in rxnsMod:
-        #        reactions.append(rxn)
-        #    else: 
-        #        
-        #        print('update rxn')
-        
-        #self.gas = ct.Solution(species=self.gas.species(), reactions=reactions,
-        #                       thermo='IdealGas', kinetics='GasKinetics')
+        if generate_new_mech:
+            self.gas = ct.Solution(species=self.gas.species(), reactions=reactions,
+                                   thermo='IdealGas', kinetics='GasKinetics')
 
     def update(self, result, writeLog=True):
         obj_fcn_str = f"{result['obj_fcn']:.3e}"

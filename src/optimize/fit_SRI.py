@@ -22,7 +22,7 @@ max_pos_system_value = np.finfo(float).max*(1E-20)
 default_SRI_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'a', 'b', 'c', 'd', 'e']
 
 def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_curvefit=True):
-    def fit_fcn_decorator(x0, alter_idx, jac=False):               
+    def fit_fcn_decorator(x0, alter_idx, s=[], jac=False):               
         def set_coeffs(*args):
             coeffs = x0
             for n, idx in enumerate(alter_idx):
@@ -34,14 +34,14 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
             A_0, A_inf = np.exp(ln_A_0), np.exp(ln_A_inf)
             k_0 = A_0*T**n_0*np.exp(-Ea_0/(Ru*T))
             k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
-            P_r = k_0/k_inf*M
+            P_r = k_0*M/k_inf
 
             #n = 1/(1+np.log10(P_r)**2)
             #F = (a*np.exp(-b/T) + np.exp(-T/c))**n*d*np.exp(-e/T)
             #k = k_inf*P_r/(1 + P_r)*F
             #ln_k = np.log(k)
 
-            ln_k = np.log(d*k_inf*P_r/(1 + P_r)) + 1/(1+np.log10(P_r)**2)*np.log(a*np.exp(-b/T) + np.exp(-T/c)) - e/T # TODO: ineq constraint that a*np.exp(-b/T) + np.exp(-T/c) > 0
+            ln_k = np.log(d*k_inf*P_r/(1 + P_r)) + 1/(1+np.log10(P_r)**2)*np.log(a*np.exp(-b/T) + np.exp(-T/c)) - e*np.log(T) # TODO: ineq constraint that a*np.exp(-b/T) + np.exp(-T/c) > 0
             
             return ln_k
 
@@ -89,7 +89,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
                 elif n == 9: # dlnk_d_d
                     jac.append(np.ones_like(T)/d)
                 elif n == 10:# dlnk_de
-                    jac.append(-1/T)
+                    jac.append(np.log(T))
 
             jac = np.vstack(jac).T
             return jac
@@ -100,17 +100,18 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
             return ln_SRI_jac
     
     def nlopt_fit_fcn_decorator(fit_fcn, grad_fcn, x0, alter_idx, T, ln_k_original):
-        old_grad = []
         def nlopt_fit_fcn(x, grad):
+            x = x/s + x0[alter_idx]
 
             resid = fit_func(T, *x) - ln_k_original
+            loss = generalized_loss_fcn(resid).sum()
+
+            s[:] = np.abs(np.sum(loss*grad_fcn(T, *x).T, axis=1))
 
             if len(grad) > 0:
-                grad[:] = np.sum(resid*grad_fcn(T, *x).T, axis=1)
+                grad[:] = np.sum(loss*grad_fcn(T, *x).T, axis=1)
 
-            loss = generalized_loss_fcn(resid)  
-
-            return loss.sum()
+            return loss
         return nlopt_fit_fcn
         
 
@@ -130,7 +131,9 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
         x0[3:6] = np.array([-a0[0]*Ru, np.exp(a0[1]), 0])
 
     if len(x0) < 7:
-        x0[6:10] = [1.0, 10.0, 1000, 1.0, 1.0] # initial guesses for fitting SRI if none exist
+        #x0[6:10] = [1.0, 10.0, 1000, 1.0, 1.0] # initial guesses for fitting SRI if none exist
+        x0[6:10] = [1.0, -100.0, 1000, 1.0, 0.0] # initial guesses for fitting SRI if none exist
+        #x0[6:10] = [1.0, -1.0, 100.0, 1.0, 0.01] # initial guesses for fitting SRI if none exist
 
     x0[1] = np.log(x0[1])
     x0[4] = np.log(x0[4])
@@ -158,6 +161,8 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
                 bnds[1].append(np.log(max_pos_system_value))
             else:
                 bnds[1].append(max_pos_system_value)
+    else:
+        bnds = deepcopy(bnds)
 
     if A_idx is not None:
         bnds[0][A_idx] = np.log(bnds[0][A_idx])
@@ -171,10 +176,10 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
         elif val > bnds[1][n]:
             p0[n] = bnds[1][n]
     
-    fit_func = fit_fcn_decorator(x0, alter_idx)
-    fit_func_jac = fit_fcn_decorator(x0, alter_idx, jac=True)
-
     if scipy_curvefit:
+        fit_func = fit_fcn_decorator(x0, alter_idx)
+        fit_func_jac = fit_fcn_decorator(x0, alter_idx, jac=True)
+
         if len(bnds) > 0:
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', OptimizeWarning)
@@ -195,12 +200,14 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
                     return
 
     else:
-        s = fit_fcn_decorator(x0, alter_idx, jac=True)(T, *x0)
-        s = 1/np.linalg.norm(s, axis=1)
-
+        #s = fit_fcn_decorator(x0, alter_idx, jac=True)(T, *x0)
+        #s = 1/np.linalg.norm(s, axis=1)
+        s = np.ones_like(p0)
+        fit_func = fit_fcn_decorator(x0, alter_idx, s=s)
+        fit_func_jac = fit_fcn_decorator(x0, alter_idx, s=s, jac=True)
         nlopt_fit_fcn = nlopt_fit_fcn_decorator(fit_func, fit_func_jac, x0, alter_idx, T, ln_k)
         
-        opt = nlopt.opt(nlopt.LD_LBFGS, len(alter_idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
+        opt = nlopt.opt(nlopt.LN_SBPLX, len(alter_idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
 
         opt.set_min_objective(nlopt_fit_fcn)
         #opt.set_maxeval(int(options['stop_criteria_val'])-1)
@@ -208,11 +215,13 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
 
         opt.set_xtol_rel(1E-2)
         opt.set_ftol_rel(1E-2)
-        opt.set_lower_bounds(bnds[0])
-        opt.set_upper_bounds(bnds[1])
+        opt.set_lower_bounds((bnds[0]-x0[alter_idx])*s)
+        opt.set_upper_bounds((bnds[1]-x0[alter_idx])*s)
 
-        #opt.set_initial_step(1E-1)
-        x = opt.optimize(p0) # optimize!
+        opt.set_initial_step(1E-3)
+        x = opt.optimize(np.zeros_like(p0)) # optimize!
+
+    print(f'ln_k_resid [{np.sum((ln_k - fit_func(T, *x))**2)**0.5}]')
 
     if A_idx is not None:
         x[A_idx] = np.exp(x[A_idx])

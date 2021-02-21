@@ -13,6 +13,7 @@ from timeit import default_timer as timer
 
 from convert_units import OoM
 from optimize.misc_fcns import generalized_loss_fcn
+from optimize.fit_SRI import fit_SRI
 
 Ru = ct.gas_constant
 # Ru = 1.98720425864083
@@ -284,10 +285,22 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
         if rxn.falloff.type == 'Troe':
             coeffs = fit_Troe(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds)
         elif rxn.falloff.type == 'SRI':
-            print('if these two do not have matching elements, work needs to be done')
-            print(coefNames)
-            print(default_SRI_coefNames)
-            coeffs = fit_SRI(rates, T, mech.M(rxn), x0, coefNames=coefNames, bnds=[])
+            SRI_coefNames = []
+            for key, coefName in zip(coefKeys, coefNames):
+                if coefName == 'activation_energy':
+                    SRI_coefNames.append('Ea')
+                elif coefName == 'pre_exponential_factor':
+                    SRI_coefNames.append('A')
+                elif coefName == 'temperature_exponent':
+                    SRI_coefNames.append('n')
+
+                if key['coeffs'] == 'low_rate':
+                    SRI_coefNames[-1] = f'{SRI_coefNames[-1]}_0'
+                elif key['coeffs'] == 'high_rate':
+                    SRI_coefNames[-1] = f'{SRI_coefNames[-1]}_inf'
+            
+            SRI_coefNames.extend(['a', 'b', 'c', 'd', 'e'])
+            coeffs = fit_SRI(rates, T, mech.M(rxn), x0, coefNames=SRI_coefNames, bnds=bnds)
 
     return coeffs
 
