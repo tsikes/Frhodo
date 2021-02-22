@@ -14,8 +14,7 @@ from scipy import stats
 from optimize.optimize_worker import Worker
 from optimize.fit_fcn import initialize_parallel_worker, update_mech_coef_opt
 from optimize.misc_fcns import rates, set_bnds
-from optimize.fit_coeffs import fit_Troe_no_ct
-from optimize.fit_SRI import fit_SRI
+from optimize.fit_coeffs import fit_SRI, fit_Troe_no_ct
 
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -325,8 +324,10 @@ class Multithread_Optimize:
                     rxn_coef['coef_x0'][6:] = fit_SRI(rates[6:], T[6:], M[6:], x0=rxn_coef['coef_x0'][0:6], 
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
                 else:   # This is for testing, it's not really needed
+                    print(rxn_coef['coef_x0'][6:])
                     rxn_coef['coef_x0'][6:] = fit_SRI(rates[6:], T[6:], M[6:], x0=rxn_coef['coef_x0'], 
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
+                    print(rxn_coef['coef_x0'][6:])
 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'SRI'
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
