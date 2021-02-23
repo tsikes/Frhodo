@@ -318,14 +318,14 @@ class Multithread_Optimize:
             rates = np.exp(rxn_rate_opt['x0'][i:i+len(T)])
             
             if type(rxn) is ct.FalloffReaction:
-                lb = rxn_coef['coef_bnds']['lower'][6:]
-                ub = rxn_coef['coef_bnds']['upper'][6:]
+                lb = rxn_coef['coef_bnds']['lower']
+                ub = rxn_coef['coef_bnds']['upper']
                 if rxn.falloff.type == 'Troe':
-                    rxn_coef['coef_x0'][6:] = fit_SRI(rates[6:], T[6:], M[6:], x0=rxn_coef['coef_x0'][0:6], 
+                    rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
                 else:   # This is for testing, it's not really needed
                     print(rxn_coef['coef_x0'][6:])
-                    rxn_coef['coef_x0'][6:] = fit_SRI(rates[6:], T[6:], M[6:], x0=rxn_coef['coef_x0'], 
+                    rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
                     print(rxn_coef['coef_x0'][6:])
 
