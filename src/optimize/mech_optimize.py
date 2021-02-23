@@ -321,13 +321,11 @@ class Multithread_Optimize:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
                 if rxn.falloff.type == 'Troe':
-                    rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
+                    rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
                 else:   # This is for testing, it's not really needed
-                    print(rxn_coef['coef_x0'][6:])
-                    rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
+                    rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
-                    print(rxn_coef['coef_x0'][6:])
 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'SRI'
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]

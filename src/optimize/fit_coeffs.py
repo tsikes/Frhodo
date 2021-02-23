@@ -101,8 +101,8 @@ def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[
     return popt
 
 
-def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_curvefit=True):
-    def fit_fcn_decorator(x0, alter_idx, s=[], jac=False):               
+def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_curvefit=True, Fit_LPL_HPL=False):
+    def fit_fcn_decorator(x0, M, alter_idx, s=[], jac=False):               
         def set_coeffs(*args):
             coeffs = x0
             for n, idx in enumerate(alter_idx):
@@ -186,16 +186,15 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
             return loss
         return nlopt_fit_fcn
         
-
     ln_k = np.log(rates)
     
     alter_idx = {'low_rate': [], 'high_rate': [], 'falloff_parameters': [], 'all': []}
-    for n, coefName in enumerate(default_SRI_coefNames): # ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'a', 'b', 'c', 'd', 'e']
+    for n, coefName in enumerate(default_SRI_coefNames):
         if coefName in coefNames:
             alter_idx['all'].append(n)
-            if n in [0, 1, 2]:
+            if coefName in ['Ea_0', 'A_0', 'n_0']:
                 alter_idx['low_rate'].append(n)
-            elif n in [3, 4, 5]:
+            elif coefName in ['Ea_inf', 'A_inf', 'n_inf']:
                 alter_idx['low_rate'].append(n)
             else:
                 alter_idx['falloff_parameters'].append(n)
@@ -204,13 +203,11 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
         idx = alter_idx['low_rate']
         a0 = np.polyfit(np.reciprocal(T[idx]), ln_k[idx], 1)
         x0[idx] = np.array([-a0[0]*Ru, np.exp(a0[1]), 0])
-        x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
 
     if (set([3, 4, 5]) & set(alter_idx)) and len(x0) < 4:
         idx = alter_idx['high_rate']
         a0 = np.polyfit(np.reciprocal(T[idx]), ln_k[idx], 1)
         x0[idx] = np.array([-a0[0]*Ru, np.exp(a0[1]), 0])
-        x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
 
     # initial guesses for SRI a, b
     #Ea_0, ln_A_0, n_0, Ea_inf, ln_A_inf, n_inf
@@ -223,19 +220,17 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
     a0 = a0.convert().coef
     x0[6:8] = [np.exp(a0[0]), -a0[1]]   # TODO: This could result in invalid numbers if a*exp(-b/T) > 1
 
-    if len(x0) < 9:
-    #    #x0[6:10] = [1.0, 10.0, 1000, 1.0, 1.0] # initial guesses for fitting SRI if none exist
-        x0[8:10] = [2000, 1.0, 0.0] # initial guesses for fitting SRI if none exist
-    #    #x0[6:10] = [1.0, -1.0, 100.0, 1.0, 0.01] # initial guesses for fitting SRI if none exist
+    if len(x0) < 11:
+    #    #x0[6:11] = [1.0, 10.0, 1000, 1.0, 1.0] # initial guesses for fitting SRI if none exist
+        x0[8:11] = [T[-1], 1.0, 0.0] # initial guesses for fitting SRI if none exist
+    #    #x0[6:11] = [1.0, -1.0, 100.0, 1.0, 0.01] # initial guesses for fitting SRI if none exist
     
-    x0[1] = np.log(x0[1])
-    x0[4] = np.log(x0[4])
-
     x0 = np.array(x0)
 
-    A_idx = None
-    if set(['A_0', 'A_inf']) & set(coefNames):
-        A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
+    A_idx = [1, 4]
+    #A_idx = None
+    #if set(['A_0', 'A_inf']) & set(coefNames):
+    #    A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
     
     # set default bounds
     if len(bnds) == 0:
@@ -257,69 +252,72 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
     else:
         bnds = deepcopy(bnds)
 
-    
-
     if A_idx is not None:
+        x0[A_idx] = np.log(x0[A_idx])
         bnds[0][A_idx] = np.log(bnds[0][A_idx])
         bnds[1][A_idx] = np.log(bnds[1][A_idx])
 
     # only valid initial guesses
-    p0 = x0[alter_idx['all']]
-    for n, val in enumerate(p0):
+    for n, val in enumerate(x0):
         if val < bnds[0][n]:
-            p0[n] = bnds[0][n]
+            x0[n] = bnds[0][n]
         elif val > bnds[1][n]:
-            p0[n] = bnds[1][n]
+            x0[n] = bnds[1][n]
 
-    print(bnds)
-    print(p0)
+    if not Fit_LPL_HPL:
+        for arrhenius_type in ['low_rate', 'high_rate']:
+            idx = alter_idx[arrhenius_type]
+            if len(idx) > 0:
+                x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
 
-    if scipy_curvefit:
-        fit_func = fit_fcn_decorator(x0, alter_idx['all'])
-        fit_func_jac = fit_fcn_decorator(x0, alter_idx['all'], jac=True)
+        idx = alter_idx['falloff_parameters']
+        p0 = x0[idx]
 
-        if len(bnds) > 0:
+        if scipy_curvefit:
+            fit_func = fit_fcn_decorator(x0, M[idx], idx)
+            fit_func_jac = fit_fcn_decorator(x0, M[idx], idx, jac=True)
+
+            if len(bnds) == 0:
+                bnds = [np.ones_like(p0[idx]), np.ones_like(p0[idx])]*np.inf
+            else:
+                bnds = [bnds[0][idx], bnds[1][idx]]
+
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', OptimizeWarning)
                 #try:
-                x, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox', bounds=bnds,
-                                    jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                x, _ = curve_fit(fit_func, T[idx], ln_k[idx], p0=p0, method='dogbox', bounds=bnds,
+                                        jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
                                         #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
                 #except:
                 #    return
+            
+            arrhenius_idx = [*alter_idx['low_rate'], *alter_idx['high_rate']]
+            x = np.array([*x0[arrhenius_idx], *x])
 
-        else:           
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', OptimizeWarning)
-                try:
-                    x, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='dogbox',
-                                     jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-                except:
-                    return
-
-    else:
-        #s = fit_fcn_decorator(x0, alter_idx, jac=True)(T, *x0)
-        #s = 1/np.linalg.norm(s, axis=1)
-        s = np.ones_like(p0)
-        fit_func = fit_fcn_decorator(x0, alter_idx, s=s)
-        fit_func_jac = fit_fcn_decorator(x0, alter_idx, s=s, jac=True)
-        nlopt_fit_fcn = nlopt_fit_fcn_decorator(fit_func, fit_func_jac, x0, alter_idx, T, ln_k)
+        else:
+            #s = fit_fcn_decorator(x0, alter_idx, jac=True)(T, *x0)
+            #s = 1/np.linalg.norm(s, axis=1)
+            s = np.ones_like(p0)
+            fit_func = fit_fcn_decorator(x0, alter_idx, s=s)
+            fit_func_jac = fit_fcn_decorator(x0, alter_idx, s=s, jac=True)
+            nlopt_fit_fcn = nlopt_fit_fcn_decorator(fit_func, fit_func_jac, x0, alter_idx, T, ln_k)
         
-        opt = nlopt.opt(nlopt.LN_SBPLX, len(alter_idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
+            opt = nlopt.opt(nlopt.LN_SBPLX, len(alter_idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
 
-        opt.set_min_objective(nlopt_fit_fcn)
-        #opt.set_maxeval(int(options['stop_criteria_val'])-1)
-        #opt.set_maxtime(options['stop_criteria_val']*60)
+            opt.set_min_objective(nlopt_fit_fcn)
+            #opt.set_maxeval(int(options['stop_criteria_val'])-1)
+            #opt.set_maxtime(options['stop_criteria_val']*60)
 
-        opt.set_xtol_rel(1E-2)
-        opt.set_ftol_rel(1E-2)
-        opt.set_lower_bounds((bnds[0]-x0[alter_idx])*s)
-        opt.set_upper_bounds((bnds[1]-x0[alter_idx])*s)
+            opt.set_xtol_rel(1E-2)
+            opt.set_ftol_rel(1E-2)
+            opt.set_lower_bounds((bnds[0]-x0[alter_idx])*s)
+            opt.set_upper_bounds((bnds[1]-x0[alter_idx])*s)
 
-        opt.set_initial_step(1E-3)
-        x = opt.optimize(np.zeros_like(p0)) # optimize!
-
-    print(f'ln_k_resid [{np.sum((ln_k - fit_func(T, *x))**2)**0.5}]')
+            opt.set_initial_step(1E-3)
+            x = opt.optimize(np.zeros_like(p0)) # optimize!
+    
+    print(f'x {x}')
+    print(f'ln_k_resid [{np.sum((ln_k - fit_fcn_decorator(x0, M, alter_idx["all"])(T, *x))**2)**0.5}]')
 
     if A_idx is not None:
         x[A_idx] = np.exp(x[A_idx])
@@ -513,6 +511,8 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
         if rxn.falloff.type == 'Troe':
             coeffs = fit_Troe(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds)
         elif rxn.falloff.type == 'SRI':
+            M = mech.M(rxn, [T, P, X])
+
             SRI_coefNames = []
             for key, coefName in zip(coefKeys, coefNames):
                 if coefName == 'activation_energy':
@@ -528,7 +528,7 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
                     SRI_coefNames[-1] = f'{SRI_coefNames[-1]}_inf'
             
             SRI_coefNames.extend(['a', 'b', 'c', 'd', 'e'])
-            coeffs = fit_SRI(rates, T, mech.M(rxn), x0, coefNames=SRI_coefNames, bnds=bnds)
+            coeffs = fit_SRI(rates, T, M, x0, coefNames=SRI_coefNames, bnds=bnds)
 
     return coeffs
 
