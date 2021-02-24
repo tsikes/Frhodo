@@ -283,7 +283,7 @@ class Base_Plot(QtCore.QObject):
                                 max_data = data.max()
                     else:
                         C = np.abs(max_data-min_data)
-                    C *= 10**(OoM(max_data) + 1.75)  # scaling factor TODO: + 1 looks loglike, + 2 linear like
+                    C *= 10**(OoM(max_data) + 2)  # scaling factor TODO: + 1 looks loglike, + 2 linear like
                     C = RoundToSigFigs(C, 1)    # round to 1 significant figure
                     str = 'axes.set_{0:s}scale("{1:s}", C={2:e})'.format(coord, 'bisymlog', C)
         
