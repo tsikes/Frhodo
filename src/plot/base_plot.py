@@ -24,6 +24,7 @@ import matplotlib as mpl
 #mpl.use("module://mplcairo.qt") # This implements mplcairo, faster/more accurate. Issues with other OSes?
 import numpy as np
 
+from convert_units import OoM
 from plot.custom_mplscale import *
 from plot.custom_mpl_ticker_formatter import *
 from timeit import default_timer as timer
@@ -273,15 +274,17 @@ class Base_Plot(QtCore.QObject):
                 if min_data != max_data:
                     # if zero is within total range, find largest pos or neg range
                     if np.sign(max_data) != np.sign(min_data):  
-                        pos_data = finite_data[finite_data>=0]
-                        pos_range = pos_data.max() - pos_data.min()
-                        neg_data = finite_data[finite_data<=0]
-                        neg_range = neg_data.max() - neg_data.min()
-                        C = np.max([pos_range, neg_range])
+                        processed_data = [finite_data[finite_data>=0], finite_data[finite_data<=0]]
+                        C = 0
+                        for data in processed_data:
+                            range = np.abs(data.max() - data.min())
+                            if range > C:
+                                C = range
+                                max_data = data.max()
                     else:
                         C = np.abs(max_data-min_data)
-                    C /= 1E3                  # scaling factor TODO: debating between 100, 500 and 1000
-                    C = RoundToSigFigs(C, 1)  # round to 1 significant figure
+                    C *= 10**(OoM(max_data) + 1.75)  # scaling factor TODO: + 1 looks loglike, + 2 linear like
+                    C = RoundToSigFigs(C, 1)    # round to 1 significant figure
                     str = 'axes.set_{0:s}scale("{1:s}", C={2:e})'.format(coord, 'bisymlog', C)
         
         eval(str)
