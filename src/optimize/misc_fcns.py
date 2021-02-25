@@ -8,7 +8,7 @@ import cantera as ct
 
 Ru = ct.gas_constant
 min_neg_system_value = np.finfo(float).min*(1E-20) # Don't push the limits too hard
-min_pos_system_value = np.finfo(float).eps*(1.1)
+min_pos_system_value = np.finfo(float).eps*(1E2)
 max_pos_system_value = np.finfo(float).max*(1E-20)
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -165,9 +165,9 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
             coef_bnds['exist'].append([False, False])
 
             if SRI_coef == 'a': # this restriction isn't stricly necessary but can run into issues with log(-val) without
-                coef_bnds['lower'].append(0)  
+                coef_bnds['lower'].append(0.0)  
             elif SRI_coef == 'c': # c must be 0 or greater
-                coef_bnds['lower'].append(10000/np.log(max_pos_system_value))   # needs to be large enough for exp(T/c) to not blow up
+                coef_bnds['lower'].append(0.0)
             elif SRI_coef == 'd': # d must be positive value
                 coef_bnds['lower'].append(min_pos_system_value)  
             else:

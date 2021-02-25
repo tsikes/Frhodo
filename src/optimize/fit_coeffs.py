@@ -117,7 +117,12 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
             P_r = k_0/k_inf*M
 
             n = 1/(1+np.log10(P_r)**2)
-            F = ((a*np.exp(-b/T) + np.exp(-T/c))**n)*d*T**e
+            if c == 0.0:
+                exp_neg_T_c = 0
+            else:
+                exp_neg_T_c = np.exp(-T/c)
+
+            F = ((a*np.exp(-b/T) + exp_neg_T_c)**n)*d*T**e
             k = k_inf*P_r/(1 + P_r)*F
             ln_k = np.log(k)
 
@@ -132,7 +137,12 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
             k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
             P_r = k_0/k_inf*M
 
-            abc_interior = a*np.exp(-b/T) + np.exp(-T/c)
+            if c == 0.0:
+                exp_neg_T_c = 0
+            else:
+                exp_neg_T_c = np.exp(-T/c)
+
+            abc_interior = a*np.exp(-b/T) + exp_neg_T_c
             abc = 1/((1 + np.log10(P_r)**2)*abc_interior)
      
             if (set([0, 1, 2, 3, 4, 5]) & set(alter_idx)):  # if any arrhenius variable is being altered
@@ -157,7 +167,10 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
                 elif n == 7: # dlnk_db
                     jac.append(-a/T*np.exp(-b/T)*abc)
                 elif n == 8: # dlnk_dc
-                    jac.append(T/c**2*np.exp(-T/c)*abc)
+                    if c == 0.0:
+                        jac.append(np.zeros_like(T))
+                    else:
+                        jac.append(T/c**2*exp_neg_T_c*abc)
                 elif n == 9: # dlnk_d_d
                     jac.append(np.ones_like(T)/d)
                 elif n == 10:# dlnk_de
@@ -222,7 +235,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
 
     if len(x0) < 11:
     #    #x0[6:11] = [1.0, 10.0, 1000, 1.0, 1.0] # initial guesses for fitting SRI if none exist
-        x0[8:11] = [T[-1], 1.0, 0.0] # initial guesses for fitting SRI if none exist
+        x0[8:11] = [0.001, 10.0, 0.001] # initial guesses for fitting SRI if none exist
     #    #x0[6:11] = [1.0, -1.0, 100.0, 1.0, 0.01] # initial guesses for fitting SRI if none exist
     
     x0 = np.array(x0)
@@ -231,45 +244,26 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
     #A_idx = None
     #if set(['A_0', 'A_inf']) & set(coefNames):
     #    A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
-    
-    # set default bounds
-    if len(bnds) == 0:
-        bnds = [[], []]
-        for SRI_coef in coefNames:
-            if SRI_coef == 'a': # this restriction isn't stricly necessary but can run into issues with log(-val) without
-                bnds[0].append(0)  
-            elif SRI_coef == 'c': # c must be 0 or greater
-                bnds[0].append(10000/np.log(max_pos_system_value))   # needs to be large enough for exp(T/c) to not blow up
-            elif SRI_coef == 'd': # d must be positive value
-                bnds[0].append(min_pos_system_value)  
-            else:
-                bnds[0].append(min_neg_system_value)
-                    
-            if SRI_coef == 'b':
-                bnds[1].append(np.log(max_pos_system_value))
-            else:
-                bnds[1].append(max_pos_system_value)
-    else:
-        bnds = deepcopy(bnds)
-
-    if A_idx is not None:
-        x0[A_idx] = np.log(x0[A_idx])
-        bnds[0][A_idx] = np.log(bnds[0][A_idx])
-        bnds[1][A_idx] = np.log(bnds[1][A_idx])
 
     # only valid initial guesses
+    bnds = deepcopy(bnds)
     for n, val in enumerate(x0):
         if val < bnds[0][n]:
             x0[n] = bnds[0][n]
         elif val > bnds[1][n]:
             x0[n] = bnds[1][n]
 
-    if not Fit_LPL_HPL:
-        for arrhenius_type in ['low_rate', 'high_rate']:
-            idx = alter_idx[arrhenius_type]
-            if len(idx) > 0:
-                x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
+    for arrhenius_type in ['low_rate', 'high_rate']:
+        idx = alter_idx[arrhenius_type]
+        if len(idx) > 0:
+            x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
 
+    if A_idx is not None:
+        x0[A_idx] = np.log(x0[A_idx])
+        bnds[0][A_idx] = np.log(bnds[0][A_idx])
+        bnds[1][A_idx] = np.log(bnds[1][A_idx])
+
+    if not Fit_LPL_HPL:
         idx = alter_idx['falloff_parameters']
         p0 = x0[idx]
 
@@ -317,7 +311,7 @@ def fit_SRI(rates, T, M, x0=[], coefNames=default_SRI_coefNames, bnds=[], scipy_
             x = opt.optimize(np.zeros_like(p0)) # optimize!
     
     print(f'x {x}')
-    print(f'ln_k_resid [{np.sum((ln_k - fit_fcn_decorator(x0, M, alter_idx["all"])(T, *x))**2)**0.5}]')
+    print(f'ln_k_resid [{np.sum((ln_k[alter_idx["falloff_parameters"]] - fit_fcn_decorator(x0, M[alter_idx["falloff_parameters"]], alter_idx["all"])(T[alter_idx["falloff_parameters"]], *x))**2)**0.5}]')
 
     if A_idx is not None:
         x[A_idx] = np.exp(x[A_idx])
