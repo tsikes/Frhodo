@@ -236,6 +236,7 @@ class Multithread_Optimize:
                 rxn_coef['P'] = np.ones_like(rxn_coef['T'])*P
 
             elif type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
+                n_rate = 4
                 rxn_coef['T'] = []
                 rxn_coef['invT'] = []
                 rxn_coef['P'] = []
@@ -252,13 +253,13 @@ class Multithread_Optimize:
                     elif coef_type == 'high_rate':
                         rxn_coef['P'].append(np.ones(n_coef)*1E10) # Doesn't matter, will evaluate LPL and HPL
                     
-                rxn_coef['T'].append(np.linspace(*T_bnds, 5))
+                rxn_coef['T'].append(np.linspace(*T_bnds, n_rate))
                 rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
 
                 if type(rxn) is ct.PlogReaction:
-                    rxn_coef['P'].append(np.linspace(*P_bnds, 5))
+                    rxn_coef['P'].append(np.linspace(*P_bnds, n_rate))
                 else:
-                    rxn_coef['P'].append(np.ones(5)*P) # Doesn't matter, will evaluate median P for falloff
+                    rxn_coef['P'].append(np.ones(n_rate)*P) # Doesn't matter, will evaluate median P for falloff
 
                 rxn_coef['T'] = np.concatenate(rxn_coef['T'], axis=0)
                 rxn_coef['invT'] = np.concatenate(rxn_coef['invT'], axis=0)
@@ -321,12 +322,13 @@ class Multithread_Optimize:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
                 if rxn.falloff.type == 'Troe':
-                    rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
-                                                    coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
+                    rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['a', 'b', 'c', 'd', 'e'], 
+                                                  bnds=[lb, ub], scipy_curvefit=True)
+                    
                 else:   # This is for testing, it's not really needed
-                    rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
-                                                    coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
-
+                    rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['a', 'b', 'c', 'd', 'e'], 
+                                                  bnds=[lb, ub], scipy_curvefit=True)
+                
                 mech.coeffs[rxnIdx]['falloff_type'] = 'SRI'
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
 

@@ -165,7 +165,9 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
             coef_bnds['exist'].append([False, False])
 
             if SRI_coef == 'a': # this restriction isn't stricly necessary but can run into issues with log(-val) without
-                coef_bnds['lower'].append(0.0)  
+                coef_bnds['lower'].append(0.0)
+            elif SRI_coef == 'b':
+                coef_bnds['lower'].append(-300*np.log(max_pos_system_value))
             elif SRI_coef == 'c': # c must be 0 or greater
                 coef_bnds['lower'].append(0.0)
             elif SRI_coef == 'd': # d must be positive value
@@ -173,10 +175,7 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
             else:
                 coef_bnds['lower'].append(min_neg_system_value)
                     
-            if SRI_coef == 'b':
-                coef_bnds['upper'].append(np.log(max_pos_system_value))
-            else:
-                coef_bnds['upper'].append(max_pos_system_value)
+            coef_bnds['upper'].append(max_pos_system_value)
 
     coef_bnds['exist'] = np.array(coef_bnds['exist'])
     coef_bnds['lower'] = np.array(coef_bnds['lower'])
