@@ -16,6 +16,11 @@ from optimize.misc_fcns import generalized_loss_fcn
 Ru = ct.gas_constant
 # Ru = 1.98720425864083
 
+min_pos_system_value = np.finfo(float).eps*(1E2)
+min_ln_val = np.log(min_pos_system_value)
+max_pos_system_value = np.finfo(float).max*(1E-20)
+max_ln_val = np.log(max_pos_system_value)
+
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 default_SRI_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'a', 'b', 'c', 'd', 'e']
 default_Troe_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'A', 'T3', 'T1', 'T2']
@@ -584,13 +589,13 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
         else:
             s = np.ones_like(idx)
             fit_func = fit_fcn_decorator(x0, M, idx, s=s)
-            fit_func_jac = lambda x: approx_fprime(x, lambda x: fit_func(T, x/s + x0[idx]), 1E-5)
+            fit_func_jac = lambda x: approx_fprime(x, lambda x: fit_func(T, x/s + p0), 1E-5)
             nlopt_fit_fcn = nlopt_fit_fcn_decorator(fit_func, fit_func_jac, x0, idx, T, ln_k)
 
 
-            s[:] = fit_func_jac(np.zeros_like(p0))
-            print('s', s)
-            s[s == 0.0] = 1E-9
+            #s[:] = fit_func_jac(np.zeros_like(p0))
+            #print('s', s)
+            #s[s == 0.0] = 1E-9
             #s[s==0] = 10**(OoM(np.min(s[s!=0])) - 1)  # TODO: MAKE THIS BETTER running into problem when s is zero, this is a janky workaround
             s[:] = np.median(np.abs(s), axis=0)
 
@@ -602,11 +607,15 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
             opt.set_xtol_rel(1E-2)
             opt.set_ftol_rel(1E-2)
-            opt.set_lower_bounds((bnds[0][idx]-x0[idx])*s)
-            opt.set_upper_bounds((bnds[1][idx]-x0[idx])*s)
+            #opt.set_lower_bounds((bnds[0][idx]-p0)*s)
+            #opt.set_upper_bounds((bnds[1][idx]-p0)*s)
+            opt.set_lower_bounds(bnds[0][idx])
+            opt.set_upper_bounds(bnds[1][idx])
 
-            opt.set_initial_step(np.min(s[s != 1E-9]))
-            x = opt.optimize(np.zeros_like(p0))/s + x0[idx] # optimize!
+
+            print('p0 ', p0)
+            #opt.set_initial_step(np.min(s[s != 1E-9]))
+            x = opt.optimize(p0) # optimize!
 
         x = np.array([*x0[:6], *x])
     
@@ -659,32 +668,11 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
 
         if rxn.falloff.type == 'Troe':
             falloff_coefNames.extend(['A', 'T3', 'T1', 'T2'])
-            coeffs = fit_Troe(rates, T, M, x0=x0, coefNames=falloff_coefNames, bnds=bnds, scipy_curvefit=False)
+            coeffs = fit_Troe(rates, T, M, x0=x0, coefNames=falloff_coefNames, bnds=bnds, scipy_curvefit=True)
 
         elif rxn.falloff.type == 'SRI':
-<<<<<<< Updated upstream
-            M = mech.M(rxn, [T, P, X])
-
-            SRI_coefNames = []
-            for key, coefName in zip(coefKeys, coefNames):
-                if coefName == 'activation_energy':
-                    SRI_coefNames.append('Ea')
-                elif coefName == 'pre_exponential_factor':
-                    SRI_coefNames.append('A')
-                elif coefName == 'temperature_exponent':
-                    SRI_coefNames.append('n')
-
-                if key['coeffs'] == 'low_rate':
-                    SRI_coefNames[-1] = f'{SRI_coefNames[-1]}_0'
-                elif key['coeffs'] == 'high_rate':
-                    SRI_coefNames[-1] = f'{SRI_coefNames[-1]}_inf'
-            
-            SRI_coefNames.extend(['a', 'b', 'c', 'd', 'e'])
-            coeffs = fit_SRI(rates, T, M, x0, coefNames=SRI_coefNames, bnds=bnds)
-=======
             falloff_coefNames.extend(['a', 'b', 'c', 'd', 'e'])
-            coeffs = fit_SRI(rates, T, M, x0, coefNames=SRI_coefNames, bnds=bnds, scipy_curvefit=False)
->>>>>>> Stashed changes
+            coeffs = fit_SRI(rates, T, M, x0, coefNames=SRI_coefNames, bnds=bnds, scipy_curvefit=True)
 
     return coeffs
 

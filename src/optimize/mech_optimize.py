@@ -331,16 +331,6 @@ class Multithread_Optimize:
             if type(rxn) is ct.FalloffReaction:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
-<<<<<<< Updated upstream
-                if rxn.falloff.type == 'Troe':
-                    rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
-                                                    coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
-                else:   # This is for testing, it's not really needed
-                    rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
-                                                    coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
-
-                mech.coeffs[rxnIdx]['falloff_type'] = 'SRI'
-=======
                 if rxn.falloff.type == 'Troe': # This is for testing, it's not really needed
                     rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
                                                   bnds=[lb, ub], scipy_curvefit=True)
@@ -349,7 +339,6 @@ class Multithread_Optimize:
                                                   bnds=[lb, ub], scipy_curvefit=True)
                 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'Troe'
->>>>>>> Stashed changes
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
 
             else:
