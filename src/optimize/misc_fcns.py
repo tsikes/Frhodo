@@ -161,8 +161,9 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
             coef_bnds['exist'].append([True, True])
             
     if type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
-        for SRI_coef in ['a', 'b', 'c', 'd', 'e']:
+        for SRI_coef in ['A', 'T3', 'T1', 'T2']:
             coef_bnds['exist'].append([False, False])
+<<<<<<< Updated upstream
 
             if SRI_coef == 'a': # this restriction isn't stricly necessary but can run into issues with log(-val) without
                 coef_bnds['lower'].append(0.0)  
@@ -177,6 +178,10 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
                 coef_bnds['upper'].append(np.log(max_pos_system_value))
             else:
                 coef_bnds['upper'].append(max_pos_system_value)
+=======
+            coef_bnds['lower'].append(min_neg_system_value)      
+            coef_bnds['upper'].append(max_pos_system_value)
+>>>>>>> Stashed changes
 
     coef_bnds['exist'] = np.array(coef_bnds['exist'])
     coef_bnds['lower'] = np.array(coef_bnds['lower'])

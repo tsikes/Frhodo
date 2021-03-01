@@ -14,7 +14,7 @@ from scipy import stats
 from optimize.optimize_worker import Worker
 from optimize.fit_fcn import initialize_parallel_worker, update_mech_coef_opt
 from optimize.misc_fcns import rates, set_bnds
-from optimize.fit_coeffs import fit_SRI, fit_Troe_no_ct
+from optimize.fit_coeffs import fit_SRI, fit_Troe
 
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -302,6 +302,17 @@ class Multithread_Optimize:
 
     def _update_gas(self, rxn_coef_opt, rxn_rate_opt): # TODO: What happens if a second optimization is run?
         mech = self.parent.mech
+        coef_opt = self.coef_opt
+
+        # delete any falloff coefficients with 5 indices
+        delete_idx = []
+        for i, idxDict in enumerate(coef_opt):
+            rxnIdx, coefName = idxDict['rxnIdx'], idxDict['coefName']
+            if coefName == 4:
+                delete_idx.append(i)
+
+        for i in delete_idx[::-1]:
+            del coef_opt[i]
 
         rxns_changed = []
         coeffs = []
@@ -320,6 +331,7 @@ class Multithread_Optimize:
             if type(rxn) is ct.FalloffReaction:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
+<<<<<<< Updated upstream
                 if rxn.falloff.type == 'Troe':
                     rxn_coef['coef_x0'][6:] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], 
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
@@ -328,19 +340,29 @@ class Multithread_Optimize:
                                                     coefNames=['a', 'b', 'c', 'd', 'e'], bnds=[lb, ub], scipy_curvefit=True)
 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'SRI'
+=======
+                if rxn.falloff.type == 'Troe': # This is for testing, it's not really needed
+                    rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
+                                                  bnds=[lb, ub], scipy_curvefit=True)
+                else:   
+                    rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
+                                                  bnds=[lb, ub], scipy_curvefit=True)
+                
+                mech.coeffs[rxnIdx]['falloff_type'] = 'Troe'
+>>>>>>> Stashed changes
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
 
             else:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
-                rxn_coef['coef_x0'] = fit_SRI(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], scipy_curvefit=True)
+                rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], scipy_curvefit=True)
 
                 rxn_coef['coefIdx'].extend(range(0, 5)) # extend to include falloff coefficients
                 rxn_coef['coefName'].extend(range(0, 5)) # extend to include falloff coefficients
-                rxn_coef['key'].extend([{'coeffs': 'falloff_parameters', 'coeffs_bnds': 'falloff_parameters'} for i in range(0, 5)])
+                rxn_coef['key'].extend([{'coeffs': 'falloff_parameters', 'coeffs_bnds': 'falloff_parameters'} for i in range(0, 4)])
 
                 # modify mech.coeffs from plog to falloff
-                mech.coeffs[rxnIdx] = {'falloff_type': 'SRI', 'high_rate': {}, 'low_rate': {}, 'falloff_parameters': rxn_coef['coef_x0'][6:], 
+                mech.coeffs[rxnIdx] = {'falloff_type': 'Troe', 'high_rate': {}, 'low_rate': {}, 'falloff_parameters': rxn_coef['coef_x0'][6:], 
                         'default_efficiency': 1.0, 'efficiencies': {}}
 
                 n = 0
@@ -378,8 +400,8 @@ class Multithread_Optimize:
                 continue
 
             if type(rxn) is ct.FalloffReaction:   # this means input reaction is falloff
-                if rxn.falloff.type == 'Troe':
-                    rxn.falloff = ct.SriFalloff(mech.coeffs[rxnIdx]['falloff_parameters'])
+                if rxn.falloff.type == 'SRI':
+                    rxn.falloff = ct.TroeFalloff(mech.coeffs[rxnIdx]['falloff_parameters'])
 
             elif type(rxn) is ct.PlogReaction: # only need to generate a new mech if going from Plog -> SRI
                 #generate_new_mech = True
