@@ -954,6 +954,7 @@ class series:
         # Update signal and raw_signal plots
         if parent.display_shock['exp_data'].size > 0:
             parent.plot.signal.update(update_lim=True)
+            # create new shading plot
             # Background reset causes disappearing data on new shock load
             #parent.plot.signal.set_background()           # Reset background
         else:

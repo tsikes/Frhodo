@@ -439,69 +439,23 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
             ln_F = log_Fcent/np.log10(e)/(1+f1**2)
 
-            ln_k = np.log(k_inf*P_r/(1 + P_r)) + ln_F
+            ln_k_calc = np.log(k_inf*P_r/(1 + P_r)) + ln_F
             
-            return ln_k
+            return ln_k_calc
 
-        def ln_Troe_jac(T, *args):  # TODO: currently not working, maybe use autodiff?
-            [Ea_0, ln_A_0, n_0, Ea_inf, ln_A_inf, n_inf, a, b, c, d, e] = set_coeffs(*args)
-            A_0, A_inf = np.exp(ln_A_0), np.exp(ln_A_inf)
-            k_0 = A_0*T**n_0*np.exp(-Ea_0/(Ru*T))
-            k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
-            P_r = k_0/k_inf*M
-
-            if c == 0.0 or (-T/c > max_ln_val).any():
-                exp_neg_T_c = 0
-            else:
-                exp_neg_T_c = np.exp(-T/c)
-
-            abc_interior = a*np.exp(-b/T) + exp_neg_T_c
-            abc = 1/((1 + np.log10(P_r)**2)*abc_interior)
-     
-            if (set([0, 1, 2, 3, 4, 5]) & set(alter_idx)):  # if any arrhenius variable is being altered
-                ln_P_r_term = 1/(1 + P_r) - 2*np.log(abc_interior)*np.log10(P_r)/(1 + np.log10(P_r)**2)**2
-
-            jac = []
-            for n in alter_idx:
-                if n == 0:   # dlnk_dEa_0
-                    jac.append(-1/(Ru*T)*ln_P_r_term)
-                elif n == 1: # dlnk_dA_0
-                    jac.append(1/A_0*ln_P_r_term)
-                elif n == 2: # dlnk_dn_0
-                    jac.append(np.log(T)*ln_P_r_term)
-                elif n == 3: # dlnk_dEa_inf
-                    jac.append(1/(Ru*T)*ln_P_r_term)
-                elif n == 4: # dlnk_dA_inf
-                    jac.append(-1/A_inf*ln_P_r_term)
-                elif n == 5: # dlnk_dn_inf
-                    jac.append(-np.log(T)*ln_P_r_term)
-                elif n == 6: # dlnk_da
-                    jac.append(np.exp(-b/T)*abc)
-                elif n == 7: # dlnk_db
-                    jac.append(-a/T*np.exp(-b/T)*abc)
-                elif n == 8: # dlnk_dc
-                    if c == 0.0:
-                        jac.append(np.zeros_like(T))
-                    else:
-                        jac.append(T/c**2*exp_neg_T_c*abc)
-                elif n == 9: # dlnk_d_d
-                    jac.append(np.ones_like(T)/d)
-                elif n == 10:# dlnk_de
-                    jac.append(np.log(T))
-
-            jac = np.vstack(jac).T
-            return jac
+        def ln_Troe_jac(T, *x):  # TODO: currently not working, maybe use autodiff?
+            return approx_fprime(x, lambda x: ln_Troe(T, *x), 1E-5)
 
         if not jac:
             return ln_Troe
         else:
             return ln_Troe_jac
     
-    def nlopt_fit_fcn_decorator(fit_fcn, grad_fcn, x0, idx, T, ln_k_original):
+    def nlopt_fit_fcn_decorator(fit_fcn, grad_fcn, x0, idx, T):
         def nlopt_fit_fcn(x, grad=[]):
             x = x/s + x0[idx]
 
-            resid = fit_func(T, *x) - ln_k_original
+            resid = fit_func(T, *x) - ln_k
             loss = generalized_loss_fcn(resid).sum()
 
             #s[:] = np.abs(np.sum(loss*grad_fcn(T, *x).T, axis=1))
@@ -537,7 +491,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
     
     # initial guesses for falloff
     if len(x0) != 10:
-        x0 = [*x0[:6], 0.1, 100, 1000, 10000] # initial guesses for fitting Troe if none exist
+        x0 = [*x0[:6], 0.1, 100, 1000, 1000] # initial guesses for fitting Troe if none exist
     
     x0 = np.array(x0)
 
@@ -568,16 +522,21 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
         idx = alter_idx['falloff_parameters']
         T, M, ln_k = T[idx], M[idx], ln_k[idx]
         p0 = x0[idx]
+        s = [1, ]
+
+        if len(bnds) == 0:
+            bnds = [-np.ones_like(p0), np.ones_like(p0)]*np.inf
+        else:
+            bnds = [bnds[0][idx], bnds[1][idx]]
+
+        fit_func = fit_fcn_decorator(x0, M, idx, s=s)
+        fit_func_jac = fit_fcn_decorator(x0, M, idx, s=s, jac=True)
+
+        #s[:] = fit_func_jac(T, *p0)
+        #s[s==0] = 10**(OoM(np.min(s[s!=0])) - 1)  # TODO: MAKE THIS BETTER running into problem when s is zero, this is a janky workaround
+        print('s ', s)
 
         if scipy_curvefit:
-            fit_func = fit_fcn_decorator(x0, M, idx)
-            fit_func_jac = fit_fcn_decorator(x0, M, idx, jac=True)
-
-            if len(bnds) == 0:
-                bnds = [np.ones_like(p0[idx]), np.ones_like(p0[idx])]*np.inf
-            else:
-                bnds = [bnds[0][idx], bnds[1][idx]]
-
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', OptimizeWarning)
                 #try:
@@ -587,17 +546,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
                 #    return
 
         else:
-            s = np.ones_like(idx)
-            fit_func = fit_fcn_decorator(x0, M, idx, s=s)
-            fit_func_jac = lambda x: approx_fprime(x, lambda x: fit_func(T, x/s + p0), 1E-5)
             nlopt_fit_fcn = nlopt_fit_fcn_decorator(fit_func, fit_func_jac, x0, idx, T, ln_k)
-
-
-            #s[:] = fit_func_jac(np.zeros_like(p0))
-            #print('s', s)
-            #s[s == 0.0] = 1E-9
-            #s[s==0] = 10**(OoM(np.min(s[s!=0])) - 1)  # TODO: MAKE THIS BETTER running into problem when s is zero, this is a janky workaround
-            s[:] = np.median(np.abs(s), axis=0)
 
             opt = nlopt.opt(nlopt.LN_SBPLX, len(idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
 
@@ -636,7 +585,7 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
     rates = np.array(rates)
     T = np.array(T)
     P = np.array(P)
-    x0 = np.array(x0)
+    x0 = np.array(x0).copy()
     coefNames = np.array(coefNames)
     bnds = np.array(bnds)
 

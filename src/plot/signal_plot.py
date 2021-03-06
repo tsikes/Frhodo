@@ -92,14 +92,12 @@ class Plot(Base_Plot):
         ## Set lower plots ##
         self.ax.append(self.fig.add_subplot(4,1,(2,4), sharex = self.ax[0]))
         self.ax[1].item = {}
-        self.ax[1].item['exp_data'] = self.ax[1].scatter([],[], color='0', facecolors='0',
-            linewidth=0.5, alpha = 0.85, zorder=2)
-        self.ax[1].item['sim_data'] = self.ax[1].add_line(mpl.lines.Line2D([],[], c='#0C94FC', zorder=4))
         nan_array = [np.nan, np.nan]
         self.ax[1].item['unc_shading'] = self.ax[1].fill_between(nan_array, nan_array, nan_array, 
                                                                  color='#0C94FC', alpha=0.2, linewidth=0, zorder=0)
-        self.ax[1].item['unc_shading'].empty_verts = [path._vertices for path in self.ax[1].item['unc_shading'].get_paths()]
-        self.ax[1].item['unc_shading'].empty_codes = [path._codes for path in self.ax[1].item['unc_shading'].get_paths()]
+        self.ax[1].item['exp_data'] = self.ax[1].scatter([],[], color='0', facecolors='0',
+            linewidth=0.5, alpha = 0.85, zorder=2)
+        self.ax[1].item['sim_data'] = self.ax[1].add_line(mpl.lines.Line2D([],[], c='#0C94FC', zorder=4))
         self.ax[1].item['history_data'] = []
         self.ax[1].item['cutoff_line'] = [self.ax[1].axvline(x=np.nan, ls='--', c='#BF0000', zorder=5), 
                                           self.ax[1].axvline(x=np.nan, ls='--', c='#BF0000', zorder=5)]
@@ -460,25 +458,36 @@ class Plot(Base_Plot):
         parent = self.parent
         obj_fcn_type = parent.obj_fcn_type_box.currentText()
 
-        if self.show_unc_shading and obj_fcn_type == 'Bayesian':
-            t = self.ax[1].item['sim_data'].get_xdata()
-            obs_sim = self.ax[1].item['sim_data'].get_ydata()
-            unc = parent.series.uncertainties(t)
+        t = self.ax[1].item['sim_data'].get_xdata()
+        len_exp_data = len(parent.display_shock['exp_data'])
 
-            if self.parent.exp_unc.unc_type == '%':
-                abs_unc = [obs_sim/(1+unc), obs_sim*(1+unc)]
-            else:
-                abs_unc = [obs_sim - unc, obs_sim + unc]
+        # if any of these occur, remove shading and do not continue
+        if (not self.show_unc_shading or obj_fcn_type != 'Bayesian' 
+            or len(t) == 0 or np.isnan(t).any() or len_exp_data == 0):
+            
+            self.ax[1].item['unc_shading'].set_visible(False)
+            return
+        
+        obs_sim = self.ax[1].item['sim_data'].get_ydata()
+        unc = parent.series.uncertainties(t)
 
-            dummy = self.ax[1].fill_between(t, abs_unc[0], abs_unc[1])
-            verts = [path._vertices for path in dummy.get_paths()]
-            codes = [path._codes for path in dummy.get_paths()]
-            dummy.remove()
+        if self.parent.exp_unc.unc_type == '%':
+            abs_unc = [obs_sim/(1+unc), obs_sim*(1+unc)]
         else:
-            verts = self.ax[1].item['unc_shading'].empty_verts
-            codes = self.ax[1].item['unc_shading'].empty_codes
+            abs_unc = [obs_sim - unc, obs_sim + unc]
 
-        self.ax[1].item['unc_shading'].set_verts_and_codes(verts, codes)
+        # # this is causing a disappearing unc shading if a bad experiment is selected. Not sure why
+        #dummy = self.ax[1].fill_between(t, abs_unc[0], abs_unc[1])
+        #verts = [path._vertices for path in dummy.get_paths()]
+        #codes = [path._codes for path in dummy.get_paths()]
+        #dummy.remove()
+
+        #self.ax[1].item['unc_shading'].set_verts_and_codes(verts, codes)
+        #self.ax[1].item['unc_shading'].set_visible(True)
+
+        self.ax[1].item['unc_shading'].remove()
+        self.ax[1].item['unc_shading'] = self.ax[1].fill_between(t, abs_unc[0], abs_unc[1], 
+                                                                 color='#0C94FC', alpha=0.2, linewidth=0, zorder=0)
 
     def switch_weight_unc_plot(self):
         parent = self.parent

@@ -382,9 +382,8 @@ class Properties():
             for i, var in enumerate(vars['unknown']):   # Sets partials in jacobian according to unknowns
                 a1, a2, a3, a4 = 0, 0, 0, 0
                 if var == 'T1':
-                    b = 2*T2*P1/(P2*T1**3)
-                    a1 = u1s*(1/T1**2 - b/R)
-                    a2 = -2*cp1/u1s - b*T2*P1/P2
+                    a1 = u1s/(R*T1**2)*(1 - 2*(T2/P2)*(P1/T1))
+                    a2 = -2*(cp1/u1s + (T2/P2)**2*(P1**2/T1**3))
                     
                 elif var == 'P1':
                     a1 = u1s*T2/(R*T1**2*P2) - P2/P1**2
@@ -392,13 +391,13 @@ class Properties():
                     
                 elif var == 'u1':
                     a1 = 2*u1/(R*T1)*(T2*P1/(P2*T1) - 1)
-                    a2 = 4*(T1*cp1 - T2*cp2)/u1**3
+                    a2 = 4*(h1 - h2)/u1**3
                     a3 = 2*P5/R*u1_m_u2/a
-                    a4 = 4*(T2*cp2 - T5*cp5)/u1_m_u2**3
+                    a4 = 4*(h2 - h5)/u1_m_u2**3
                    
                 elif var == 'T2':
                     a1 = u1s*P1/(R*T1**2*P2)
-                    a2 = 2*cp2/u1s + 2*T2*(P1/(P2*T1))**2
+                    a2 = 2*(cp2/u1s + T2*(P1/(P2*T1))**2)
                     a3 = P5**2/R*u1_m_u2_s/a**2
                     a4 = -2*cp2/u1_m_u2_s + P5/(P2*T5) + (P2*T5)/(P5*T2**2)
                 
