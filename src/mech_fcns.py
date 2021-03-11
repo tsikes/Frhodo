@@ -420,7 +420,8 @@ class Chemical_Mechanism:
         #if len(rxns_to_SRI) > 0:    # cast pressure dependent reaction types as SRI
         #    self.update_gas(rxns_to_SRI)
 
-        #time.sleep(5E-3)        # Not sure if this is necessary, but it reduces strange behavior in incident shock reactor
+        # Not sure if this is necessary, but it reduces strange behavior in incident shock reactor
+        time.sleep(5E-3)        # TODO: if incident shock reactor is written in C++, this can likely be removed
     
     def modify_thermo(self, multipliers):  # Only works for NasaPoly2 (NASA 7) currently
         for i in range(np.shape(self.gas.species_names)[0]):
