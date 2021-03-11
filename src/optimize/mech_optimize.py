@@ -29,8 +29,6 @@ class Multithread_Optimize:
         # parent.threadpool.setMaxThreadCount(2) # Sets thread count to 1 (1 for gui - this is implicit, 1 for calc)
         # log_txt = 'Multithreading with maximum {:d} threads\n'.format(parent.threadpool.maxThreadCount())
         # parent.log.append(log_txt, alert=False)
-        
-        self.time_between_plots = 0.01  # maximum update rate
 
         # Set Distribution
         self.dist = stats.gennorm
@@ -44,6 +42,7 @@ class Multithread_Optimize:
         parent.path_set.optimized_mech()
 
         self.last_plot_timer = 0.0
+        self.time_between_plots = 0.0  # maximum update rate, updated based on time to plot
 
         ## Check fit_coeffs
         #from optimize.fit_coeffs import debug
@@ -439,12 +438,18 @@ class Multithread_Optimize:
         self.parent.tree.update_coef_rate_from_opt(result['coef_opt'], result['x'])
 
         if timer() - self.last_plot_timer > self.time_between_plots:
+            plot_start_time = timer()
             # if displayed shock isn't in shocks being optimized, calculate the new plot
             if result['ind_var'] is None and result['observable'] is None:
                 self.parent.run_single()
             else:       # if displayed shock in list being optimized, show result
                 self.parent.plot.signal.update_sim(result['ind_var'][:,0], result['observable'][:,0])
             self.parent.plot.opt.update(result['stat_plot'])
+
+            # this keeps gui responsive, minimum time between plots = max time to plot*0.1
+            current_time_to_plot = timer() - plot_start_time
+            if current_time_to_plot*0.1 > self.time_between_plots:
+                self.time_between_plots = current_time_to_plot*0.1
 
             self.last_plot_timer = timer()
     
