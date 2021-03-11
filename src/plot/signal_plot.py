@@ -25,7 +25,22 @@ class Plot(Base_Plot):
         # Connect Signals
         self.canvas.mpl_connect('resize_event', self._resize_event)
         parent.num_sim_lines_box.valueChanged.connect(self.set_history_lines)
+        parent.plot_tab_widget.currentChanged.connect(self.tab_changed)
     
+    def tab_changed(self, idx): # Run simulation is tab changed to Sim Explorer
+        if self.parent.plot_tab_widget.tabText(idx) == 'Signal/Sim':
+            self._draw_event()
+    
+    def _draw_items_artist(self):   # only draw if tab is open
+        idx = self.parent.plot_tab_widget.currentIndex()
+        if self.parent.plot_tab_widget.tabText(idx) == 'Signal/Sim':
+            super()._draw_items_artist()
+
+    def _draw_event(self, event=None):   # only draw if tab is open
+        idx = self.parent.plot_tab_widget.currentIndex()
+        if self.parent.plot_tab_widget.tabText(idx) == 'Signal/Sim':
+            super()._draw_event(event)
+
     def info_table_text(self):
         parent = self.parent
         # TODO: Fix variables when implementing zone 2 and 5 option
@@ -120,6 +135,7 @@ class Plot(Base_Plot):
         # Create canvas from Base
         super().create_canvas()
         self._set_scale('y', 'abslog', self.ax[1])  # set Signal/SIM y axis to abslog
+        self.ax[0].animateAxisLabels = True # set weight/unc plot to have animated axis labels
         
         # Add draggable lines
         draggable_items = [[0, 'weight_shift'], [0, 'weight_k'], [0, 'weight_extrema'],

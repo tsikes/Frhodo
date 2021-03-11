@@ -30,6 +30,8 @@ class Multithread_Optimize:
         # log_txt = 'Multithreading with maximum {:d} threads\n'.format(parent.threadpool.maxThreadCount())
         # parent.log.append(log_txt, alert=False)
         
+        self.time_between_plots = 0.01  # maximum update rate
+
         # Set Distribution
         self.dist = stats.gennorm
 
@@ -40,6 +42,8 @@ class Multithread_Optimize:
     def start_threads(self):
         parent = self.parent
         parent.path_set.optimized_mech()
+
+        self.last_plot_timer = 0.0
 
         ## Check fit_coeffs
         #from optimize.fit_coeffs import debug
@@ -402,18 +406,19 @@ class Multithread_Optimize:
                                    thermo='IdealGas', kinetics='GasKinetics')
 
     def update(self, result, writeLog=True):
+        # Update Hall of Fame
+        if not self.HoF:
+            self.HoF = result
+        elif result['obj_fcn'] < self.HoF['obj_fcn']:
+            self.HoF = result
+
+        # Update log
         obj_fcn_str = f"{result['obj_fcn']:.3e}"
         replace_strs = [['e+', 'e'], ['e0', 'e'], ['e-0', 'e-']]
         for pair in replace_strs:
             obj_fcn_str = obj_fcn_str.replace(pair[0], pair[1])
         result['obj_fcn_str'] = obj_fcn_str
 
-        # Update Hall of Fame
-        if not self.HoF:
-            self.HoF = result
-        elif result['obj_fcn'] < self.HoF['obj_fcn']:
-            self.HoF = result
-        
         if writeLog:
             if result['i'] > 999:
                 obj_fcn_space = '\t\t'
@@ -430,15 +435,18 @@ class Multithread_Optimize:
             self.parent.log.append('\t{:s} {:^5d}{:s}{:^s}{:s}{:^s}'.format(
                 result['type'][0].upper(), result['i'], obj_fcn_space, obj_fcn_str, 
                 obj_fcn_str_space, self.HoF['obj_fcn_str']), alert=False)
+
         self.parent.tree.update_coef_rate_from_opt(result['coef_opt'], result['x'])
-        
-        # if displayed shock isn't in shocks being optimized, calculate the new plot
-        if result['ind_var'] is None and result['observable'] is None:
-            self.parent.run_single()
-        else:       # if displayed shock in list being optimized, show result
-            self.parent.plot.signal.update_sim(result['ind_var'][:,0], result['observable'][:,0])
-        
-        self.parent.plot.opt.update(result['stat_plot'])
+
+        if timer() - self.last_plot_timer > self.time_between_plots:
+            # if displayed shock isn't in shocks being optimized, calculate the new plot
+            if result['ind_var'] is None and result['observable'] is None:
+                self.parent.run_single()
+            else:       # if displayed shock in list being optimized, show result
+                self.parent.plot.signal.update_sim(result['ind_var'][:,0], result['observable'][:,0])
+            self.parent.plot.opt.update(result['stat_plot'])
+
+            self.last_plot_timer = timer()
     
     def on_worker_progress(self, perc_completed, time_left):
         self.parent.update_progress(perc_completed, time_left)

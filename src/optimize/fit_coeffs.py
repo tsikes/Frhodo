@@ -538,7 +538,6 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
         T, M, ln_k = T[idx], M[idx], ln_k[idx]
         p0 = x0[idx]
         #p0 = np.zeros_like(x0[idx])
-        s = 10**OoM(x0[idx])
 
         if len(bnds) == 0:
             bnds = [-np.ones_like(p0), np.ones_like(p0)]*np.inf
