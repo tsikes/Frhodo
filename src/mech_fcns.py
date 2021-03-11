@@ -421,7 +421,7 @@ class Chemical_Mechanism:
         #    self.update_gas(rxns_to_SRI)
 
         # Not sure if this is necessary, but it reduces strange behavior in incident shock reactor
-        time.sleep(5E-3)        # TODO: if incident shock reactor is written in C++, this can likely be removed
+        time.sleep(10E-3)        # TODO: if incident shock reactor is written in C++, this can likely be removed
     
     def modify_thermo(self, multipliers):  # Only works for NasaPoly2 (NASA 7) currently
         for i in range(np.shape(self.gas.species_names)[0]):

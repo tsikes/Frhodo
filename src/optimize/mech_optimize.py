@@ -485,6 +485,8 @@ class Multithread_Optimize:
         parent.path_set.mech()  # update mech pulldown choices
         parent.tree._copy_expanded_tab_rates() # trigger copy rates
 
+        parent.app.alert(parent, 5*1000) # make application alert for x millisec on completion
+
     def abort_workers(self):
         if hasattr(self, 'worker'):
             self.worker.signals.abort.emit()

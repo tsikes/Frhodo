@@ -538,6 +538,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
         T, M, ln_k = T[idx], M[idx], ln_k[idx]
         p0 = x0[idx]
         #p0 = np.zeros_like(x0[idx])
+        s = 10**OoM(x0[idx])
 
         if len(bnds) == 0:
             bnds = [-np.ones_like(p0), np.ones_like(p0)]*np.inf
@@ -607,7 +608,7 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
 
     # Faster and works for extreme values like n = -70
     if type(rxn) is ct.ElementaryReaction or type(rxn) is ct.ThreeBodyReaction:
-        #x0 = [mech.coeffs_bnds[rxnIdx]['rate'][coefName]['resetVal'] for coefName in mech.coeffs_bnds[rxnIdx]['rate']]
+        x0 = [mech.coeffs_bnds[rxnIdx]['rate'][coefName]['resetVal'] for coefName in mech.coeffs_bnds[rxnIdx]['rate']]
         coeffs = fit_arrhenius(rates, T, x0=x0, coefNames=coefNames, bnds=bnds)
 
         if type(rxn) is ct.ThreeBodyReaction and 'pre_exponential_factor' in coefNames:
