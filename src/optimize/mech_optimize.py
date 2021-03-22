@@ -334,10 +334,7 @@ class Multithread_Optimize:
             if type(rxn) is ct.FalloffReaction:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
-                if rxn.falloff.type == 'Troe': # This is for testing, it's not really needed
-                    rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
-                                                  bnds=[lb, ub], scipy_curvefit=True)
-                else:   
+                if rxn.falloff.type == 'SRI':   
                     rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
                                                   bnds=[lb, ub], scipy_curvefit=True)
                 

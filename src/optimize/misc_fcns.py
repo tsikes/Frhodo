@@ -7,9 +7,9 @@ import cantera as ct
 
 
 Ru = ct.gas_constant
-min_neg_system_value = np.finfo(float).min*(1E-20) # Don't push the limits too hard
 min_pos_system_value = np.finfo(float).eps*(1E2)
-max_pos_system_value = np.finfo(float).max*(1E-20)
+max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/3)
+min_neg_system_value = -max_pos_system_value
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 
@@ -161,7 +161,7 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
             coef_bnds['exist'].append([True, True])
             
     if type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
-        for SRI_coef in ['A', 'T3', 'T1', 'T2']:
+        for coef in ['A', 'T3', 'T1', 'T2']:
             coef_bnds['exist'].append([False, False])
             coef_bnds['lower'].append(min_neg_system_value)      
             coef_bnds['upper'].append(max_pos_system_value)
