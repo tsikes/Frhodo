@@ -54,7 +54,7 @@ class ReactorOde(object):
         self.Wk = self.gas.molecular_weights
         self.rho1 = gas.density
         self.rhoI = rhoI        #initial density
-        self.delta_dA = 1 if area_change else 0
+        self.delta_dA = area_change
         self.t_lab_end = t_lab_end
 
     def __call__(self, t, y):
@@ -78,7 +78,7 @@ class ReactorOde(object):
 
         if self.delta_dA:
             xi = max(z / self.L, 1e-10)
-            dA_dt = self.delta_dA * v * self.As*self.n/self.L * xi**(self.n-1.0)/(1.0-xi**self.n)**2.0
+            dA_dt = v * self.As*self.n/self.L * xi**(self.n-1.0)/(1.0-xi**self.n)**2.0
         else:
             dA_dt = 0.0
         
@@ -96,67 +96,9 @@ class ReactorOde(object):
         ydot = ydot*rho*A/(self.rhoI*self.A1) # convert from d/dt to d/dt_lab
         
         return ydot
-     
-    #--------------------------------------------------------------------------------
-    # POST PROCESSING
-    #--------------------------------------------------------------------------------
-
-    # compute the density gradient from the solution
-    def drhodz(self, t, y):
-        z, A, rho, vel, T, tlab = y[:6]
-        self.gas.set_unnormalized_mass_fractions(y[6:])
-        self.gas.TD = T, rho
-        cp = self.gas.cp_mass
-        Wmix = self.gas.mean_molecular_weight
-        hk = self.gas.partial_molar_enthalpies
-        wdot = self.gas.net_production_rates
-
-        if self.delta_dA:
-            xi = max(z / self.L, 1e-10)
-            dAdt = self.delta_dA * vel * self.As*self.n/self.L * xi**(self.n-1.0)/(1.0-xi**self.n)**2.0 # dA/dt
-        else:
-            dAdt = 0.0
-        
-        beta = vel**2 * (1.0/(cp*T) - Wmix / (Ru * T))
-
-        return 1/vel/(1+beta) * (sum((hk/(cp*T) - Wmix) * wdot) - rho*beta/A * dAdt)
-
-    # compute the contribution of each reaction to the density gradient
-    def drhodz_per_rxn(self, t, y, rxnNum=None):
-        z, A, rho, vel, T, tlab = y[:6]
-        self.gas.set_unnormalized_mass_fractions(y[6:])
-        self.gas.TD = T, rho
-        cp = self.gas.cp_mass
-        Wmix = self.gas.mean_molecular_weight
-
-        if not hasattr(self, delta_N):
-            nu_fwd = self.gas.product_stoich_coeffs()
-            nu_rev = self.gas.reactant_stoich_coeffs()
-            self.delta_N = np.sum(nu_fwd, axis=0) - np.sum(nu_rev, axis=0)
-
-        if self.delta_dA:
-            xi = max(z / self.L, 1e-10)
-            dAdt = self.delta_dA * vel * self.As*self.n/self.L * xi**(self.n - 1.0)/(1.0 - xi**self.n)**2.0 # dA/dt
-        else:
-            dAdt = 0.0
-
-        if rxnNum is None:
-            rxns = range(self.gas.n_reactions)
-        elif isinstance(rxnNum, list):
-            rxns = rxnNum
-        else:
-            rxns = [rxnNum]
-
-        # per reaction properties
-        rj = self.gas.net_rates_of_progress[rxns]
-        hj = self.gas.delta_enthalpy[rxns]
-        delta_N = self.delta_N[rxns]
-
-        beta = vel**2 * (1.0/(cp*T) - Wmix/(Ru*T))
-
-        return 1/vel/(1+beta)*(rj*(hj/(cp*T) - Wmix*delta_N) - rho*beta/A*dAdt)
 
 
+# compute the density gradient from the solution
 def drhodz(states, L=0.1, As=0.2, A1=0.2, area_change=False):
     n = 0.5
 
