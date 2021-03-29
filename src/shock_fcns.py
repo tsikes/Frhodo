@@ -337,8 +337,6 @@ class Properties():
         P1 = zone[1]['P'] = shockVarDict['P1']
         self._set_gas(zone[1]['T'], zone[1]['P'], zone[1]['X'])
         h1 = self.gas.enthalpy_mass
-        if type == 'jac':
-            cp1 = self.gas.cp_mass
         zone[1]['rho'] = self.gas.density
         v1 = 1/zone[1]['rho']
         
@@ -346,8 +344,6 @@ class Properties():
         P2 = zone[2]['P'] = shockVarDict['P2']
         self._set_gas(zone[2]['T'], zone[2]['P'], zone[2]['X'])
         h2 = self.gas.enthalpy_mass
-        if type == 'jac':
-            cp2 = self.gas.cp_mass
         zone[2]['rho'] = self.gas.density
         v2 = 1/zone[2]['rho']
         u2 = zone[2]['u'] = u1*v2/v1    # Conservation of Mass across shock
@@ -356,66 +352,61 @@ class Properties():
         P5 = zone[5]['P'] = shockVarDict['P5']
         self._set_gas(zone[5]['T'], zone[5]['P'], zone[5]['X'])
         h5 = self.gas.enthalpy_mass
-        if type == 'jac':
-            cp5 = self.gas.cp_mass
         zone[5]['rho'] = self.gas.density
         v5 = 1/zone[5]['rho']
         zone[5]['u'] = u2*v5/v2         # Conservation of Mass across shock
         
+        R = Ru/self.gas.mean_molecular_weight   # Since we're assuming frozen chemistry, it doesn't change
+
         # Computation savers
         u1s = u1**2
-        u1_m_u2 = (u1-u2)
-        u1_m_u2_s = u1_m_u2**2
-        
+        a = T2*P1/(T1*P2)
+        b = T5*P2/(T2*P5)
+
         if type == 'fcn':
-            v2_v1 = v2/v1
-            v2s_v1s = v2_v1**2
-            
-            zero = [(P2/P1-1) + (u1s/(P1*v1))*(v2_v1-1),           # Conservation of Momentum, inc shock
-                    ((h2-h1)/(0.5*u1s)) + (v2s_v1s-1),             # Conservation of Energy, inc shock
-                    (P5/P2-1) + (u1_m_u2_s/(P2*(v5-v2))),          # Conservation of Momentum, ref shock
-                    ((h5-h2)/(0.5*u1_m_u2_s)) + ((v5+v2)/(v5-v2))] # Conservation of Energy, ref shock
-        
+            zero = [(P2/P1-1) + (u1s*(a-1)/(R*T1)),                    # Conservation of Momentum, inc shock
+                    (2/u1s*(h2-h1)) + (a**2-1),                          # Conservation of Energy, inc shock
+                    (P5/P2-1) + (u1s/(R*T2)*(1-a)**2/(b-1)),          # Conservation of Momentum, ref shock
+                    (2*(h5-h2)/(u1s*(1-a)**2)) + 2/(b-1) + 1]        # Conservation of Energy, ref shock
+
         elif type == 'jac':
-            R = Ru/self.gas.mean_molecular_weight   # Since we're assuming frozen chemistry, it doesn't change
-            a = P2*T5 - T2*P5
             for i, var in enumerate(vars['unknown']):   # Sets partials in jacobian according to unknowns
-                a1, a2, a3, a4 = 0, 0, 0, 0
+                f1, f2, f3, f4 = 0, 0, 0, 0
                 if var == 'T1':
-                    a1 = u1s/(R*T1**2)*(1 - 2*(T2/P2)*(P1/T1))
-                    a2 = -2*(cp1/u1s + (T2/P2)**2*(P1**2/T1**3))
+                    f1 = u1s/(R*T1**2)*(1 - 2*a)
+                    f2 = -2/T1*(h1/u1s + a**2)
                     
                 elif var == 'P1':
-                    a1 = u1s*T2/(R*T1**2*P2) - P2/P1**2
-                    a2 = 2*P1*(T2/(P2*T1))**2
+                    f1 = u1s*a/(R*T1*P1) - P2/P1**2
+                    f2 = 2*a**2/P1
                     
                 elif var == 'u1':
-                    a1 = 2*u1/(R*T1)*(T2*P1/(P2*T1) - 1)
-                    a2 = 4*(h1 - h2)/u1**3
-                    a3 = 2*P5/R*u1_m_u2/a
-                    a4 = 4*(h2 - h5)/u1_m_u2**3
+                    f1 = 2*u1/(R*T1)*(a-1)
+                    f2 = 4/u1**3*(h1-h2)
+                    f3 = 2*u1/(R*T2)*(1-a)**2/(b-1)
+                    f4 = 4/u1**3*(h2-h5)/(1-a)**2
                    
                 elif var == 'T2':
-                    a1 = u1s*P1/(R*T1**2*P2)
-                    a2 = 2*(cp2/u1s + T2*(P1/(P2*T1))**2)
-                    a3 = P5**2/R*u1_m_u2_s/a**2
-                    a4 = -2*cp2/u1_m_u2_s + P5/(P2*T5) + (P2*T5)/(P5*T2**2)
+                    f1 = u1s*a/(R*T1*T2)
+                    f2 = 2/T2*(h2/u1s + a**2)
+                    f3 = u1s/(R*T2**2)*(1-a)/(b-1)**2*(1-a*(1-2*b))
+                    f4 = 2/T2*(1/u1s*(a*(2*h5-h2)-h2)/(1-a)**3 + b/(b-1)**2)
                 
                 elif var == 'P2':
-                    a1 = 1/P1 - u1s/R*(T2*P1/(P2*T1)**2)
-                    a2 = -2/P2*(T2*P1/(P2*T1))**2
-                    a3 = -P5/P2**2 - P5*T5/R*u1_m_u2_s/a**2
-                    a4 = -P5*T2/(T5*P2**2) - T5/(P5*T2)  
+                    f1 = 1/P1 - u1s*a/(R*T1*P2)
+                    f2 = -2/P2*a**2
+                    f3 = -P5/P2**2 + u1s/(R*T2*P2)*(1-a)/(b-1)**2*(a*(3*b-2)-b)
+                    f4 = -1/P2*2*b/(b-1)**2 
                     
                 elif var == 'T5':
-                    a3 = -P2*P5/R*u1_m_u2_s/a**2
-                    a4 = 2*cp5/u1_m_u2_s - P2/(T2*P5) - T2*P5/(P2*T5**2)
+                    f3 = -u1s/(R*T2*T5)*b*((1-a)/(b-1))**2
+                    f4 = 2/T5*(h5/(u1s*(1-a)**2) - b/(b**2-1))
                 
                 elif var == 'P5':
-                    a3 = 1/P2 + P2*T5/R*u1_m_u2_s/a**2
-                    a4 = P2*T5/(T2*P5**2) + T2/(P2*T5)  
+                    f3 = 1/P2 + u1s/(R*T2*P5)*b*((1-a)/(b-1))**2
+                    f4 = 1/P5*2*b/(b**2-1)
                 
-                temp = np.array([a1, a2, a3, a4]).reshape(-1,1)
+                temp = np.array([f1, f2, f3, f4]).reshape(-1,1)
                 if i == 0:
                     zero = temp
                 else:
