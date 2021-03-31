@@ -53,7 +53,7 @@ class Path:
                 thermo_files.append(name)
             if ext == '.tran':      # currently unused, but store transport files anyways
                 trans_files.append(name)
-            elif ext in ['.yaml', '.yml', '.cti','.ck', '.mech']: #  '.ctml', '.xml', # TODO: enable ctml and xml format
+            elif ext in ['.yaml', '.yml', '.cti','.ck', '.mech', '.inp']: #  '.ctml', '.xml', # TODO: enable ctml and xml format
                 if 'generated_mech.yaml' == name: continue
                 elif 'generated_mech.yml' == name: continue
                 unsorted_mech_files.append(name)

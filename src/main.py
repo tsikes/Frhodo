@@ -118,7 +118,7 @@ class Main(QMainWindow):
                 line = f.readline()
                 if '!' in line[0:2]:
                     continue
-                if 'thermo' in line.split('!')[0].strip().lower():
+                if 'ther' in line.split('!')[0].strip().lower():
                     return True
                 
                 if not line:
