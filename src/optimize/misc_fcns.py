@@ -107,8 +107,7 @@ def outlier(x, a=2, c=1, weights=[], max_iter=25, percentile=0.25):
     return c*x_outlier
     
 def generalized_loss_fcn(x, mu=0, a=2, c=1):    # defaults to L2 loss
-    c_2 = c**2
-    x_c_2 = (x-mu)**2/c_2
+    x_c_2 = ((x-mu)/c)**2
     
     if a == 1:          # generalized function reproduces
         loss = (x_c_2 + 1)**(0.5) - 1
@@ -123,7 +122,7 @@ def generalized_loss_fcn(x, mu=0, a=2, c=1):    # defaults to L2 loss
     else:
         loss = np.abs(a-2)/a*((x_c_2/np.abs(a-2) + 1)**(a/2) - 1)
 
-    return loss*c_2 + mu  # multiplying by c^2 is not necessary, but makes order appropriate
+    return loss*c**a + mu  # multiplying by c^2 is not necessary, but makes order appropriate
 
 def set_bnds(mech, rxnIdx, keys, coefNames):
     rxn = mech.gas.reaction(rxnIdx)
