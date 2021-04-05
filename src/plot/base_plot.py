@@ -24,7 +24,7 @@ import matplotlib as mpl
 #mpl.use("module://mplcairo.qt") # This implements mplcairo, faster/more accurate. Issues with other OSes?
 import numpy as np
 
-from convert_units import OoM
+from calculate.convert_units import OoM
 from plot.custom_mplscale import *
 from plot.custom_mpl_ticker_formatter import *
 from timeit import default_timer as timer

@@ -18,8 +18,9 @@ import numpy as np
 
 from plot.plot_main import All_Plots as plot
 from misc_widget import MessageWindow
-import appdirs, options_panel_widgets, convert_units, sim_explorer_widget
-import mech_fcns, settings, config_io, save_widget, error_window, help_menu
+from calculate import mech_fcns, reactors, convert_units
+import appdirs, options_panel_widgets, sim_explorer_widget
+import settings, config_io, save_widget, error_window, help_menu
     
 if os.environ['QT_API'] == 'pyside2': # Silence warning: "Qt WebEngine seems to be initialized from a plugin."
     QApplication.setAttribute(QtCore.Qt.AA_ShareOpenGLContexts)
@@ -60,7 +61,7 @@ class Main(QMainWindow):
         self.clipboard = QApplication.clipboard()
         
         self.var = {'reactor': {'t_unit_conv': 1}}
-        self.SIM = mech_fcns.Simulation_Result()
+        self.SIM = reactors.Simulation_Result()
         self.mech_loaded = False
         self.run_block = True
         self.convert_units = convert_units.Convert_Units(self)

@@ -3,7 +3,8 @@
 # directory for license and copyright information.
 
 import numpy as np
-import mech_widget, misc_widget, thermo_widget, series_viewer_widget, shock_fcns, save_output
+from calculate import shock_fcns
+import mech_widget, misc_widget, thermo_widget, series_viewer_widget, save_output
 from qtpy.QtWidgets import *
 from qtpy import QtWidgets, QtGui, QtCore
 from copy import deepcopy

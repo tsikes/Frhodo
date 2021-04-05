@@ -8,7 +8,7 @@ import matplotlib as mpl
 import numpy as np
 from scipy import stats
 
-from convert_units import OoM
+from calculate.convert_units import OoM
 from plot.base_plot import Base_Plot
 from plot.draggable import Draggable
 

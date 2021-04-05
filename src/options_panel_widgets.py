@@ -5,14 +5,15 @@
 import numpy as np
 from scipy.optimize import minimize
 import nlopt, pathlib, os, sys
-import mech_widget, misc_widget, thermo_widget, series_viewer_widget, shock_fcns, save_output
-from optimize.mech_optimize import Multithread_Optimize
+import mech_widget, misc_widget, thermo_widget, series_viewer_widget, save_output
+from calculate import shock_fcns 
+from calculate.optimize.mech_optimize import Multithread_Optimize
+from calculate.convert_units import OoM
+from settings import double_sigmoid
 from qtpy.QtWidgets import *
 from qtpy import QtWidgets, QtGui, QtCore
 from copy import deepcopy
 
-from convert_units import OoM
-from settings import double_sigmoid
 
 class Initialize(QtCore.QObject):
     def __init__(self, parent):

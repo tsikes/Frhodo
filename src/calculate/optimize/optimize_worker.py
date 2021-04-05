@@ -12,8 +12,8 @@ import numpy as np
 
 from timeit import default_timer as timer
 
-from optimize.fit_fcn import initialize_parallel_worker, Fit_Fun
-from optimize.misc_fcns import rates
+from calculate.optimize.fit_fcn import initialize_parallel_worker, Fit_Fun
+from calculate.optimize.misc_fcns import rates
 
 
 class Worker(QRunnable):
@@ -76,7 +76,7 @@ class Worker(QRunnable):
         parent = self.parent
         pool = mp.Pool(processes=parent.max_processors,
                        initializer=initialize_parallel_worker,
-                       initargs=(parent.mech.yaml_txt, parent.mech.coeffs, parent.mech.coeffs_bnds, 
+                       initargs=(parent.mech.reset_mech, parent.mech.thermo_coeffs, parent.mech.coeffs, parent.mech.coeffs_bnds, 
                        parent.mech.rate_bnds,))
         
         self.trim_shocks()  # trim shock data from zero weighted data

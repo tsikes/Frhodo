@@ -11,10 +11,10 @@ from timeit import default_timer as timer
 
 from scipy import stats
 
-from optimize.optimize_worker import Worker
-from optimize.fit_fcn import initialize_parallel_worker, update_mech_coef_opt
-from optimize.misc_fcns import rates, set_bnds
-from optimize.fit_coeffs import fit_SRI, fit_Troe
+from calculate.optimize.optimize_worker import Worker
+from calculate.optimize.fit_fcn import update_mech_coef_opt
+from calculate.optimize.misc_fcns import rates, set_bnds
+from calculate.optimize.fit_coeffs import fit_SRI, fit_Troe
 
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -79,7 +79,7 @@ class Multithread_Optimize:
                 parent.log.append('"Load Full Series Into Memory" must be checked for optimization of multiple experiments\n')
                 return
             elif len(parent.series_viewer.data_table) == 0:
-                parent.log.append('SetsSeries in Series Viewer and select experiments\n')
+                parent.log.append('Set Series in Series Viewer and select experiments\n')
                 return
         
         if len(self.shocks2run) == 0: return    # if no shocks to run return, not sure if necessary anymore
@@ -276,7 +276,7 @@ class Multithread_Optimize:
         rxn_rate_opt = {}
 
         # Calculate x0 (initial rates)
-        prior_mech = mech.reset()  # reset mechanism
+        prior_coeffs = mech.reset()  # reset mechanism and get mech that it was
         rxn_rate_opt['x0'] = rates(rxn_coef_opt, mech)
         
         # Determine rate bounds
@@ -298,7 +298,8 @@ class Multithread_Optimize:
         
         rxn_rate_opt['bnds'] = {'lower': np.array(lb), 'upper': np.array(ub)}
 
-        mech.coeffs = prior_mech
+        # set mech to prior mech
+        mech.coeffs = prior_coeffs
         mech.modify_reactions(mech.coeffs)
 
         return rxn_rate_opt

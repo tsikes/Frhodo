@@ -6,12 +6,12 @@ try:
 except:
     #import pathlib
     #sys.path.append(pathlib.Path(__file__).parent.absolute()) # add directory of **this** file to path
-    import optimize.CheKiPEUQ_local as CKPQ 
+    import calculate.optimize.CheKiPEUQ_local as CKPQ 
     
 try:
     import CheKiPEUQ.UserInput as UserInput
 except:
-    import optimize.CheKiPEUQ_local.UserInput as UserInput
+    import calculate.optimize.CheKiPEUQ_local.UserInput as UserInput
 
 try:
     import CiteSoft

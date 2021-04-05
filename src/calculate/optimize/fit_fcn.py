@@ -9,21 +9,21 @@ from scipy.interpolate import CubicSpline
 from scipy import stats
 from copy import deepcopy
 
-import mech_fcns
-from convert_units import OoM
-from optimize.misc_fcns import weighted_quantile, outlier, generalized_loss_fcn
-from optimize.fit_coeffs import fit_coeffs
-from optimize.CheKiPEUQ_from_Frhodo import CheKiPEUQ_Frhodo_interface
+from calculate.mech_fcns import Chemical_Mechanism
+from calculate.convert_units import OoM
+from calculate.optimize.misc_fcns import weighted_quantile, outlier, generalized_loss_fcn
+from calculate.optimize.fit_coeffs import fit_coeffs
+from calculate.optimize.CheKiPEUQ_from_Frhodo import CheKiPEUQ_Frhodo_interface
 
 mpMech = {}
 
-def initialize_parallel_worker(mech_txt, coeffs, coeffs_bnds, rate_bnds):
-    mpMech['obj'] = mech = mech_fcns.Chemical_Mechanism()
+def initialize_parallel_worker(mech_dict, species_dict, coeffs, coeffs_bnds, rate_bnds):
+    mpMech['obj'] = mech = Chemical_Mechanism()
 
     # hide mechanism loading problems because they will already have been seen
     with contextlib.redirect_stderr(io.StringIO()):
         with contextlib.redirect_stdout(io.StringIO()):
-            mech.set_mechanism(mech_txt)    # load mechanism from yaml text in memory
+            mech.set_mechanism(mech_dict, species_dict)    # load mechanism from yaml text in memory
 
     mech.coeffs = deepcopy(coeffs)
     mech.coeffs_bnds = deepcopy(coeffs_bnds)

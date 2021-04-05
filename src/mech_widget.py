@@ -76,7 +76,7 @@ class Tree(QtCore.QObject):
     
     def set_trees(self, mech):
         parent = self.parent()
-        parent.mech_tree.reset()
+        #parent.mech_tree.reset()
         self.model.removeRows(0, self.model.rowCount())
         if 'Chemkin' in parent.tab_select_comboBox.currentText():
             self.mech_tree_type = 'Chemkin'
