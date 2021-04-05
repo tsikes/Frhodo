@@ -17,7 +17,8 @@ Ru = ct.gas_constant
 # Ru = 1.98720425864083
 
 min_pos_system_value = np.finfo(float).eps*(1E2)
-max_pos_system_value = np.finfo(float).max*(1E-20)
+max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/3)
+min_neg_system_value = -max_pos_system_value
 min_ln_val = np.log(min_pos_system_value)
 max_ln_val = np.log(max_pos_system_value)
 
@@ -123,6 +124,8 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             A_0, A_inf = np.exp(ln_A_0), np.exp(ln_A_inf)
             k_0 = A_0*T**n_0*np.exp(-Ea_0/(Ru*T))
             k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
+            if ([k_0, k_inf] <= min_pos_system_value).any():
+                return np.ones_like(T)*max_pos_system_value
             P_r = k_0/k_inf*M
             log_P_r = np.log10(P_r)
 
@@ -140,11 +143,14 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             else:
                 exp_T1 = np.exp(-T/T1)
 
-            exp_T2 = np.exp(-T2/T)
+            if (-T2/T > max_ln_val).any():
+                exp_T2 = max_pos_system_value
+            else:
+                exp_T2 = np.exp(-T2/T)
 
             Fcent = (1-A)*exp_T3 + A*exp_T1 + exp_T2
             if (Fcent <= 0.0).any():
-                return np.ones_like(T)*np.inf
+                return np.ones_like(T)*max_pos_system_value
 
             log_Fcent = np.log10(Fcent)
             C = -0.4 - 0.67*log_Fcent
@@ -153,7 +159,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
             e = np.exp(1)
 
-            ln_F = log_Fcent/np.log10(e)/(1+f1**2)
+            ln_F = log_Fcent/np.log10(e)/(1 + f1**2)
 
             ln_k_calc = np.log(k_inf*P_r/(1 + P_r)) + ln_F
             
@@ -179,8 +185,11 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
                 exp_T1 = max_pos_system_value
             else:
                 exp_T1 = np.exp(-T/T1)
-
-            exp_T2 = np.exp(-T2/T)
+            
+            if (-T2/T > max_ln_val).any():
+                exp_T2 = max_pos_system_value
+            else:
+                exp_T2 = np.exp(-T2/T)
 
             Fcent = (1-A)*exp_T3 + A*exp_T1 + exp_T2
             if (Fcent <= 0.0).any():
@@ -210,14 +219,16 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             for n in alter_idx:
                 if n == 0:   # dlnk_dEa_0
                     jac.append(1/(Ru*T)*(k_inf/Pr_denom + interior_term_2))
-                elif n == 1: # dlnk_dA_0
-                    jac.append(1/A_0*(1-M_k0/Pr_denom - interior_term_2))
+                elif n == 1: # dlnk_dln_A_0
+                    #jac.append(1/A_0*(1-M_k0/Pr_denom - interior_term_2))   # dlnk_dA_0
+                    jac.append(1-M_k0/Pr_denom - interior_term_2)
                 elif n == 2: # dlnk_dn_0
                     jac.append(np.log(T)*(k_inf/Pr_denom - interior_term_2))
                 elif n == 3: # dlnk_dEa_inf
                     jac.append(1/(Ru*T)*(M_k0/Pr_denom - interior_term_2))
-                elif n == 4: # dlnk_dA_inf
-                    jac.append(1/A_inf*(1-k_inf/Pr_denom + interior_term_2))
+                elif n == 4: # dlnk_dln_A_inf
+                    #jac.append(1/A_inf*(1-k_inf/Pr_denom + interior_term_2)) # dlnk_dA_inf
+                    jac.append(1-k_inf/Pr_denom + interior_term_2)
                 elif n == 5: # dlnk_dn_inf
                     jac.append(np.log(T)*(M_k0/Pr_denom + interior_term_2))
                 elif n == 6: # dlnk_dA
@@ -273,7 +284,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
             #if len(grad) > 0:
             #    grad[:] = np.sum(loss*grad_fcn(T, *x).T, axis=1)
-
+            print(obj_val)
             return obj_val
         return obj_fcn
     
@@ -318,76 +329,80 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             x0[n] = bnds[0][n]
         elif val > bnds[1][n]:
             x0[n] = bnds[1][n]
+    
+    # Fit HPL and LPL (for falloff this is exact, otherwise a guess)
+    for arrhenius_type in ['low_rate', 'high_rate']:
+        idx = alter_idx[arrhenius_type]
+        if len(idx) > 0:
+            x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
 
-    if HPL_LPL_defined:
-        # Fit HPL and LPL
-        for arrhenius_type in ['low_rate', 'high_rate']:
-            idx = alter_idx[arrhenius_type]
-            if len(idx) > 0:
-                x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
+    if A_idx is not None:
+        x0[A_idx] = np.log(x0[A_idx])
+        bnds[0][A_idx] = np.log(bnds[0][A_idx])
+        bnds[1][A_idx] = np.log(bnds[1][A_idx])
 
-        if A_idx is not None:
-            x0[A_idx] = np.log(x0[A_idx])
-            bnds[0][A_idx] = np.log(bnds[0][A_idx])
-            bnds[1][A_idx] = np.log(bnds[1][A_idx])
-        
-        # Fit falloff
-        idx = alter_idx['falloff_parameters']
-        T, M, ln_k = T[idx], M[idx], ln_k[idx]
-        p0 = x0[idx]
-        #p0 = np.zeros_like(x0[idx])
-        s = 10**OoM(x0[idx])
+    if HPL_LPL_defined: # Fit falloff
+        idx = alter_idx['falloff_parameters']    
+    else:
+        idx = alter_idx['all'] 
 
-        if len(bnds) == 0:
-            bnds = [-np.ones_like(p0), np.ones_like(p0)]*np.inf
-        else:
-            bnds = [bnds[0][idx], bnds[1][idx]]
+    T, M, ln_k = T[idx], M[idx], ln_k[idx]
+    p0 = x0[idx]
+    #p0 = np.zeros_like(x0[idx])
+    s = np.ones_like(x0[idx])
 
-        fit_func = fit_fcn_decorator(ln_k, x0, M, idx, s=s)
-        fit_func_jac = fit_fcn_decorator(ln_k, x0, M, idx, s=s, jac=True)
+    if len(bnds) == 0:
+        bnds = [-np.ones_like(p0), np.ones_like(p0)]*np.inf
+    else:
+        bnds = [bnds[0][idx], bnds[1][idx]]
 
-        if scipy_curvefit:
-            # for testing scipy least_squares, curve_fit is a wrapper for this fcn
-            #obj_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, T, ln_k, return_sum=False)
-            #obj_fcn_jac = lambda x: fit_func_jac(T, *x)
+    fit_func = fit_fcn_decorator(ln_k, x0, M, idx, s=s)
+    fit_func_jac = fit_fcn_decorator(ln_k, x0, M, idx, s=s, jac=True)
 
-            #res = least_squares(obj_fcn, p0, method='trf', bounds=bnds, 
-            #                    jac=obj_fcn_jac, x_scale='jac', max_nfev=len(p0)*1000)
+    if scipy_curvefit:
+        # for testing scipy least_squares, curve_fit is a wrapper for this fcn
+        #obj_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, T, ln_k, return_sum=False)
+        #obj_fcn_jac = lambda x: fit_func_jac(T, *x)
 
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', OptimizeWarning)
-                try:
-                    x_fit, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='trf', bounds=bnds, # dogbox
-                                            jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-                                            #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
-                except:
-                    return
+        #res = least_squares(obj_fcn, p0, method='trf', bounds=bnds, 
+        #                    jac=obj_fcn_jac, x_scale='jac', max_nfev=len(p0)*1000)
 
-        else:
-            s[:] = calc_s(fit_func_jac(T, *p0))
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', OptimizeWarning)
+            try:
+                x_fit, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='trf', bounds=bnds, # dogbox
+                                        #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                        jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
+            except:
+                return
 
-            nlopt_fit_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, T, ln_k)
+    else:
+        #s[:] = calc_s(fit_func_jac(T, *p0))
+        nlopt_fit_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, T, ln_k)
 
-            opt = nlopt.opt(nlopt.LN_SBPLX, len(idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
+        opt = nlopt.opt(nlopt.GN_CRS2_LM, len(idx))
+        #opt = nlopt.opt(nlopt.LN_SBPLX, len(idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
 
-            opt.set_min_objective(nlopt_fit_fcn)
-            #opt.set_maxeval(int(options['stop_criteria_val'])-1)
-            #opt.set_maxtime(options['stop_criteria_val']*60)
+        opt.set_min_objective(nlopt_fit_fcn)
+        #opt.set_maxeval(int(options['stop_criteria_val'])-1)
+        #opt.set_maxtime(options['stop_criteria_val']*60)
 
-            opt.set_xtol_rel(1E-2)
-            opt.set_ftol_rel(1E-2)
-            #opt.set_lower_bounds((bnds[0][idx]-p0)*s)
-            #opt.set_upper_bounds((bnds[1][idx]-p0)*s)
-            opt.set_lower_bounds(bnds[0][idx])
-            opt.set_upper_bounds(bnds[1][idx])
+        opt.set_xtol_rel(1E-2)
+        opt.set_ftol_rel(1E-2)
+        #opt.set_lower_bounds((bnds[0][idx]-p0)*s)
+        #opt.set_upper_bounds((bnds[1][idx]-p0)*s)
+        opt.set_lower_bounds(bnds[0][idx])
+        opt.set_upper_bounds(bnds[1][idx])
 
-            print('p0 ', p0)
-            #opt.set_initial_step(np.min(s[s != 1E-9]))
-            x_fit = opt.optimize(p0) # optimize!
+        #opt.set_initial_step(calc_s(fit_func_jac(T, *p0))*1E-8)
+        x_fit = opt.optimize(p0) # optimize!
 
+    if HPL_LPL_defined: # Fit falloff
         #x = np.array([*x0[:6], *(x_fit*s + x0[idx])])
         x = np.array([*x0[:6], *x_fit])
-    
+    else:
+        x = np.array(x_fit)
+
     #if (x[-4:] == x0[-4:]).all():
     #    print('no change')
     #else:
@@ -395,10 +410,10 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
     #print(f'x  {x[-4:]}')
     #print(ln_k)
-    #fit_k = fit_func(T, *x_fit, grad_calc=False)
+    fit_k = fit_func(T, *x_fit, grad_calc=False)
     #print(fit_k)
-    #rss = np.sum((ln_k - fit_k)**2)
-    #print(f'ln_k_resid {rss}')
+    rss = np.sum((ln_k - fit_k)**2)
+    print(f'ln_k_resid {rss}')
 
     if A_idx is not None:
         x[A_idx] = np.exp(x[A_idx])

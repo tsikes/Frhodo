@@ -14,7 +14,7 @@ from scipy import stats
 from calculate.optimize.optimize_worker import Worker
 from calculate.optimize.fit_fcn import update_mech_coef_opt
 from calculate.optimize.misc_fcns import rates, set_bnds
-from calculate.optimize.fit_coeffs import fit_SRI, fit_Troe
+from calculate.optimize.fit_coeffs import fit_Troe
 
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -250,16 +250,22 @@ class Multithread_Optimize:
                    
                     rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
                     rxn_coef['T'].append(np.divide(10000, rxn_coef['invT'][-1]))
-                    if coef_type == 'low_rate':
-                        rxn_coef['P'].append(np.ones(n_coef)*1E-1) # Doesn't matter, will evaluate LPL and HPL
-                    elif coef_type == 'high_rate':
-                        rxn_coef['P'].append(np.ones(n_coef)*1E10) # Doesn't matter, will evaluate LPL and HPL
+                    if type(rxn) is ct.PlogReaction:
+                        if coef_type == 'low_rate':
+                            rxn_coef['P'].append(np.ones(n_coef)*P_bnds[0])
+                        elif coef_type == 'high_rate':
+                            rxn_coef['P'].append(np.ones(n_coef)*P_bnds[1])
+                    else:   # is falloff type equation so these are dummy values
+                        if coef_type == 'low_rate':
+                            rxn_coef['P'].append(np.ones(n_coef)*1E-1) # will evaluate LPL
+                        elif coef_type == 'high_rate':
+                            rxn_coef['P'].append(np.ones(n_coef)*1E8) # will evaluate HPL
                     
                 rxn_coef['T'].append(np.linspace(*T_bnds, 5))
                 rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
 
                 if type(rxn) is ct.PlogReaction:
-                    rxn_coef['P'].append(np.linspace(*P_bnds, 5))
+                    rxn_coef['P'].append(np.linspace(*P_bnds, 7)[1:-1])
                 else:
                     rxn_coef['P'].append(np.ones(5)*P) # Doesn't matter, will evaluate median P for falloff
 
@@ -345,7 +351,7 @@ class Multithread_Optimize:
             else:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
-                rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], scipy_curvefit=True)
+                rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], HPL_LPL_defined=False, scipy_curvefit=False)
 
                 rxn_coef['coefIdx'].extend(range(0, 5)) # extend to include falloff coefficients
                 rxn_coef['coefName'].extend(range(0, 5)) # extend to include falloff coefficients
@@ -393,7 +399,7 @@ class Multithread_Optimize:
                 if rxn.falloff.type == 'SRI':
                     rxn.falloff = ct.TroeFalloff(mech.coeffs[rxnIdx]['falloff_parameters'])
 
-            elif type(rxn) is ct.PlogReaction: # only need to generate a new mech if going from Plog -> SRI
+            elif type(rxn) is ct.PlogReaction: # only need to generate a new mech if going from Plog -> Falloff
                 #generate_new_mech = True
                 for param_type in ['low_rate', 'high_rate', 'falloff_parameters']:
                     print(mech.coeffs[rxnIdx][param_type])
