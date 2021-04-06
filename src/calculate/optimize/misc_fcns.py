@@ -10,6 +10,7 @@ Ru = ct.gas_constant
 min_pos_system_value = np.finfo(float).eps*(1E2)
 max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/3)
 min_neg_system_value = -max_pos_system_value
+T_max = 6000
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 
@@ -141,7 +142,7 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
                 if coef_x0 > 0:
                     coef_bnds['lower'].append(0)                                # Ea shouldn't change sign
                 else:
-                    coef_bnds['lower'].append(-Ru*10000*np.log(max_pos_system_value))
+                    coef_bnds['lower'].append(-Ru*T_max*np.log(max_pos_system_value))
             elif coefName == 'pre_exponential_factor':
                 coef_bnds['lower'].append(min_pos_system_value)             # A should be positive
             elif not isinstance(coefName, int):     # ints will be falloff, they will be taken care of below
@@ -151,7 +152,7 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
             if coefName == 'activation_energy' and coef_x0 < 0:   # Ea shouldn't change sign
                 coef_bnds['upper'].append(0)
             elif coefName == 'temperature_exponent':
-                coef_bnds['upper'].append(np.log(max_pos_system_value)/np.log(298.15))
+                coef_bnds['upper'].append(np.log(max_pos_system_value)/np.log(T_max))
             elif not isinstance(coefName, int):
                 coef_bnds['upper'].append(max_pos_system_value)
         else:
