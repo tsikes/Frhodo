@@ -17,12 +17,9 @@ from calculate.optimize.misc_fcns import generalized_loss_fcn
 Ru = ct.gas_constant
 # Ru = 1.98720425864083
 
-min_pos_system_value = np.finfo(float).eps*(1E2)
-max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/3)
-min_neg_system_value = -max_pos_system_value
-min_ln_val = np.log(min_pos_system_value)
+min_pos_system_value = (np.finfo(float).tiny*(1E20))**(1/2)
+max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/2)
 max_ln_val = np.log(max_pos_system_value)
-T_max = 6000
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 default_Troe_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'A', 'T3', 'T1', 'T2']
@@ -37,14 +34,24 @@ troe_falloff_0 = [[0.7, 200, 300, 400],               # (0, 0, 0)
                                                     # (1, 1, 1)
                 ]
 
-troe_all_bnds = {'A':  {'-': [min_neg_system_value, max_pos_system_value], 
-                        '+': [min_neg_system_value, max_pos_system_value]},
-                 'T3': {'-': [min_neg_system_value, -T_max/max_ln_val], 
-                        '+': [-T_max/min_ln_val, max_pos_system_value]},
-                 'T1': {'-': [min_neg_system_value, -T_max/max_ln_val], 
-                        '+': [-T_max/min_ln_val, max_pos_system_value]},
-                 'T2': {'-': [-T_max*max_ln_val, -T_max*min_ln_val], 
-                        '+': [-T_max*max_ln_val, -T_max*min_ln_val]}}
+#troe_min_pos_system_value = (np.finfo(float).tiny*(1E20))**(1/3)
+#troe_max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/3)
+#troe_min_neg_system_value = -max_pos_system_value
+#troe_min_ln_val = np.log(troe_min_pos_system_value)
+#troe_max_ln_val = np.log(troe_max_pos_system_value)
+#T_max = 6000
+#troe_all_bnds = {'A':  {'-': [troe_min_neg_system_value, troe_max_pos_system_value], 
+#                        '+': [troe_min_neg_system_value, troe_max_pos_system_value]},
+#                 'T3': {'-': [troe_min_neg_system_value, -T_max/troe_max_ln_val], 
+#                        '+': [-T_max/troe_min_ln_val, troe_max_pos_system_value]},
+#                 'T1': {'-': [troe_min_neg_system_value, -T_max/troe_max_ln_val], 
+#                        '+': [-T_max/troe_min_ln_val, troe_max_pos_system_value]},
+#                 'T2': {'-': [-T_max*troe_max_ln_val, -T_max*troe_min_ln_val], 
+#                        '+': [-T_max*troe_max_ln_val, -T_max*troe_min_ln_val]}}
+troe_all_bnds = {'A':  {'-': [-1E2, 1.0],    '+': [-1E2, 1.0]},
+                 'T3': {'-': [-1E30, -30],   '+': [30.0, 1E30]},
+                 'T1': {'-': [-1E30, -30],   '+': [30.0, 1E30]},
+                 'T2': {'-': [-1E30, 1E30],  '+': [-1E30, 1E30]}}
 
 def fit_arrhenius(rates, T, x0=[], coefNames=default_arrhenius_coefNames, bnds=[]):
     def fit_fcn_decorator(x0, alter_idx, jac=False):               
@@ -146,24 +153,24 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
             if ([k_0, k_inf] <= min_pos_system_value).any():
                 return np.ones_like(T)*max_pos_system_value
+            print(k_0)
+            print(k_inf)
             P_r = k_0/k_inf*M
             log_P_r = np.log10(P_r)
 
             if T3 == 0.0 or (-T/T3 < -max_ln_val).any():
                 exp_T3 = 0
-            elif (-T/T3 > max_ln_val).any():
-                exp_T3 = max_pos_system_value
             else:
                 exp_T3 = np.exp(-T/T3)
 
             if T1 == 0.0 or (-T/T1 < -max_ln_val).any():
                 exp_T1 = 0
-            elif (-T/T1 > max_ln_val).any():
-                exp_T1 = max_pos_system_value
             else:
                 exp_T1 = np.exp(-T/T1)
 
-            if (-T2/T > max_ln_val).any():
+            if T2 == 0.0:
+                exp_T2 = 0
+            elif (-T2/T > max_ln_val).any():
                 exp_T2 = max_pos_system_value
             else:
                 exp_T2 = np.exp(-T2/T)
@@ -190,23 +197,23 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             A_0, A_inf = np.exp(ln_A_0), np.exp(ln_A_inf)
             k_0 = A_0*T**n_0*np.exp(-Ea_0/(Ru*T))
             k_inf = A_inf*T**n_inf*np.exp(-Ea_inf/(Ru*T))
+            if ([k_0, k_inf] <= min_pos_system_value).any():
+                return np.ones((len(T), len(alter_idx)))*max_pos_system_value
             P_r = k_0/k_inf*M
             
             if T3 == 0.0 or (-T/T3 < -max_ln_val).any():
                 exp_T3 = 0
-            elif (-T/T3 > max_ln_val).any():
-                exp_T3 = max_pos_system_value
             else:
                 exp_T3 = np.exp(-T/T3)
 
             if T1 == 0.0 or (-T/T1 < -max_ln_val).any():
                 exp_T1 = 0
-            elif (-T/T1 > max_ln_val).any():
-                exp_T1 = max_pos_system_value
             else:
                 exp_T1 = np.exp(-T/T1)
             
-            if (-T2/T > max_ln_val).any():
+            if T2 == 0.0:
+                exp_T2 = 0
+            elif (-T2/T > max_ln_val).any():
                 exp_T2 = max_pos_system_value
             else:
                 exp_T2 = np.exp(-T2/T)
@@ -305,7 +312,11 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             #s[:] = np.abs(np.sum(loss*fit_func_jac(T, *x).T, axis=1))
 
             if grad.size > 0:
-                grad[:] = np.sum(fit_func_jac(T, *x).T*resid, axis=1)
+                jac = fit_func_jac(T, *x)
+                if np.isfinite(jac).all():
+                    grad[:] = np.sum(jac.T*resid, axis=1)
+                else:
+                    grad[:] = np.ones_like(resid)*max_pos_system_value
 
             return obj_val
         return obj_fcn
@@ -338,10 +349,9 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
     x0 = [*x0[:6], 0.7, 200, 300, 400] # initial guesses for fitting Troe
     x0 = np.array(x0)
 
-    A_idx = [1, 4]
-    #A_idx = None
-    #if set(['A_0', 'A_inf']) & set(coefNames):
-    #    A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
+    A_idx = None
+    if set(['A_0', 'A_inf']) & set(coefNames):
+        A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
 
     # only valid initial guesses
     bnds = deepcopy(bnds)
@@ -411,10 +421,14 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
         else:
             #s[:] = calc_s(fit_func_jac(T, *p0))
-            
-            opt = nlopt.opt(nlopt.GN_CRS2_LM, len(idx))
+            initial_step = calc_s(fit_func_jac(T, *p0))
+
+            #opt = nlopt.opt(nlopt.GN_CRS2_LM, len(idx))
             #opt = nlopt.opt(nlopt.GN_DIRECT, len(idx))
             #opt = nlopt.opt(nlopt.LN_SBPLX, len(idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
+            #opt = nlopt.opt(nlopt.LD_MMA, len(idx))
+            #opt = nlopt.opt(nlopt.LD_LBFGS, len(idx))
+            opt = nlopt.opt(nlopt.G_MLSL_LDS, len(idx))
 
             opt.set_min_objective(obj_fcn)
             #opt.set_maxeval(int(options['stop_criteria_val'])-1)
@@ -427,7 +441,14 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             opt.set_lower_bounds(bnds[0][idx])
             opt.set_upper_bounds(bnds[1][idx])
 
-            opt.set_initial_step(calc_s(fit_func_jac(T, *p0))*1E-3)
+            opt.set_initial_step(initial_step*1E-2)
+
+            local_opt = nlopt.opt(nlopt.LD_MMA, len(idx))
+            local_opt.set_xtol_rel(1E-3)
+            local_opt.set_ftol_rel(1E-3)
+            local_opt.set_initial_step(initial_step*1E-3)
+            
+            opt.set_local_optimizer(local_opt)
             x_fit = opt.optimize(p0) # optimize!
 
         if HPL_LPL_defined: # Fit falloff
@@ -435,11 +456,38 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             x = np.array([*x0[:6], *x_fit])
         else:
             x = np.array(x_fit)
-    
-        obj_val = obj_fcn(x)
-        if obj_val < HoF['obj_fcn']:
-            HoF['obj_fcn'] = obj_val
+
+        #obj_val = obj_fcn(x)
+        if opt.last_optimum_value() < HoF['obj_fcn']:
+            HoF['obj_fcn'] = opt.last_optimum_value()
             HoF['coeffs'] = x
+    
+    p0 = HoF['coeffs']
+    troe_bnds = []
+    for n, coef in enumerate(['A', 'T3', 'T1', 'T2']):
+        if HoF['coeffs'][-(4-n)] < 0:
+            troe_bnds.append(troe_all_bnds[coef]['-'])
+        else:
+            troe_bnds.append(troe_all_bnds[coef]['+'])
+
+    troe_bnds = np.array(troe_bnds)
+    bnds[:,-4:] = troe_bnds.T
+
+    opt = nlopt.opt(nlopt.LN_SBPLX, len(idx)) # nlopt.LN_SBPLX nlopt.LN_COBYLA nlopt.LD_MMA nlopt.LD_LBFGS
+
+    opt.set_min_objective(obj_fcn)
+    #opt.set_maxeval(int(options['stop_criteria_val'])-1)
+    #opt.set_maxtime(options['stop_criteria_val']*60)
+
+    opt.set_xtol_rel(1E-4)
+    opt.set_ftol_rel(1E-4)
+    #opt.set_lower_bounds((bnds[0][idx]-p0)*s)
+    #opt.set_upper_bounds((bnds[1][idx]-p0)*s)
+    opt.set_lower_bounds(bnds[0][idx])
+    opt.set_upper_bounds(bnds[1][idx])
+
+    opt.set_initial_step(calc_s(fit_func_jac(T, *p0))*1E-3)
+    x_fit = opt.optimize(p0) # optimize!
 
     #if (x[-4:] == x0[-4:]).all():
     #    print('no change')
@@ -447,12 +495,12 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
     #    print('fit values found')
 
     #print(f'x  {x[-4:]}')
-    print(ln_k)
-    fit_k = fit_func(T, *HoF['coeffs'], grad_calc=False)
-    print(fit_k)
-    #rss = np.sum((ln_k - fit_k)**2)
+    #print(ln_k)
+    #fit_k = fit_func(T, *HoF['coeffs'], grad_calc=False)
+    #print(fit_k)
+    #rss = 1/2*np.sum((ln_k - fit_k)**2)
     #print(f'ln_k_resid {rss}')
-    print(obj_val)
+    print(opt.last_optimum_value())
 
     if A_idx is not None:
         HoF['coeffs'][A_idx] = np.exp(HoF['coeffs'][A_idx])
@@ -495,13 +543,9 @@ def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds):
             elif key['coeffs'] == 'high_rate':
                 falloff_coefNames[-1] = f'{falloff_coefNames[-1]}_inf'
 
-        if rxn.falloff.type == 'Troe':
-            falloff_coefNames.extend(['A', 'T3', 'T1', 'T2'])
-            coeffs = fit_Troe(rates, T, M, x0=x0, coefNames=falloff_coefNames, bnds=bnds, scipy_curvefit=True)
-
-        elif rxn.falloff.type == 'SRI':
-            falloff_coefNames.extend(['a', 'b', 'c', 'd', 'e'])
-            coeffs = fit_SRI(rates, T, M, x0, coefNames=SRI_coefNames, bnds=bnds, scipy_curvefit=True)
+        falloff_coefNames.extend(['A', 'T3', 'T1', 'T2'])
+        coeffs = fit_Troe(rates, T, M, x0=x0, coefNames=falloff_coefNames, bnds=bnds, 
+                            HPL_LPL_defined=True, scipy_curvefit=False)
 
     return coeffs
 

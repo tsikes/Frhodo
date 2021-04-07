@@ -7,9 +7,11 @@ import cantera as ct
 
 
 Ru = ct.gas_constant
-min_pos_system_value = np.finfo(float).eps*(1E2)
+
+min_pos_system_value = (np.finfo(float).tiny*(1E20))**(1/3)
 max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/3)
 min_neg_system_value = -max_pos_system_value
+T_min = 300
 T_max = 6000
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -142,15 +144,20 @@ def set_bnds(mech, rxnIdx, keys, coefNames):
                 if coef_x0 > 0:
                     coef_bnds['lower'].append(0)                                # Ea shouldn't change sign
                 else:
-                    coef_bnds['lower'].append(-Ru*T_max*np.log(max_pos_system_value))
+                    coef_bnds['lower'].append(-1E-3*Ru*T_max*np.log(max_pos_system_value))
             elif coefName == 'pre_exponential_factor':
                 coef_bnds['lower'].append(min_pos_system_value)             # A should be positive
+            elif coefName == 'temperature_exponent':
+                coef_bnds['lower'].append(np.log(min_pos_system_value)/np.log(T_max))
             elif not isinstance(coefName, int):     # ints will be falloff, they will be taken care of below
                 coef_bnds['lower'].append(min_neg_system_value)
                     
             # set upper bnds
-            if coefName == 'activation_energy' and coef_x0 < 0:   # Ea shouldn't change sign
-                coef_bnds['upper'].append(0)
+            if coefName == 'activation_energy':
+                if coef_x0 < 0:   # Ea shouldn't change sign
+                    coef_bnds['upper'].append(0)
+                else:
+                    coef_bnds['upper'].append(-1E-3*Ru*T_min*np.log(min_pos_system_value))
             elif coefName == 'temperature_exponent':
                 coef_bnds['upper'].append(np.log(max_pos_system_value)/np.log(T_max))
             elif not isinstance(coefName, int):
