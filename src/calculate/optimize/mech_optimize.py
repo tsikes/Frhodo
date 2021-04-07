@@ -227,7 +227,6 @@ class Multithread_Optimize:
                 P = []
                 for PlogRxn in mech.coeffs[rxnIdx]:
                     P.append(PlogRxn['Pressure'])
-                P = np.median(P)
                 P_bnds = [np.min(P), np.max(P)]
             else:
                 P = np.median(shock_conditions['P_reactor'])
@@ -261,11 +260,11 @@ class Multithread_Optimize:
                         elif coef_type == 'high_rate':
                             rxn_coef['P'].append(np.ones(n_coef)*1E8) # will evaluate HPL
                     
-                rxn_coef['T'].append(np.linspace(*T_bnds, 5))
+                rxn_coef['T'].append(np.linspace(*T_bnds, 6)[1:])
                 rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
 
                 if type(rxn) is ct.PlogReaction:
-                    rxn_coef['P'].append(np.linspace(*P_bnds, 7)[1:-1])
+                    rxn_coef['P'].append(np.geomspace(*P_bnds, 7)[1:-1])
                 else:
                     rxn_coef['P'].append(np.ones(5)*P) # Doesn't matter, will evaluate median P for falloff
 
