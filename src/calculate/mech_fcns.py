@@ -347,7 +347,10 @@ class Chemical_Mechanism:
                             rxnChanged = True
 
                             if coeffs[rxnNum]['falloff_type'] == 'Troe':
-                                rxn.falloff = ct.TroeFalloff(coeffs[rxnNum][key])
+                                if coeffs[rxnNum][key][-1] == 0.0:
+                                    rxn.falloff = ct.TroeFalloff(coeffs[rxnNum][key][:-1])
+                                else:
+                                    rxn.falloff = ct.TroeFalloff(coeffs[rxnNum][key])
                             else:   # could also be SRI. For optimization this would need to be cast as Troe
                                 rxn.falloff = ct.SriFalloff(coeffs[rxnNum][key])
 

@@ -260,13 +260,13 @@ class Multithread_Optimize:
                         elif coef_type == 'high_rate':
                             rxn_coef['P'].append(np.ones(n_coef)*1E8) # will evaluate HPL
                     
-                rxn_coef['T'].append(np.linspace(*T_bnds, 6)[1:])
+                rxn_coef['T'].append(np.linspace(*T_bnds, 6)[1:-1])
                 rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
 
                 if type(rxn) is ct.PlogReaction:
-                    rxn_coef['P'].append(np.geomspace(*P_bnds, 7)[1:-1])
+                    rxn_coef['P'].append(np.geomspace(*P_bnds, 6)[1:-1])
                 else:
-                    rxn_coef['P'].append(np.ones(5)*P) # Doesn't matter, will evaluate median P for falloff
+                    rxn_coef['P'].append(np.ones(4)*P) # Doesn't matter, will evaluate median P for falloff
 
                 rxn_coef['T'] = np.concatenate(rxn_coef['T'], axis=0)
                 rxn_coef['invT'] = np.concatenate(rxn_coef['invT'], axis=0)
@@ -343,6 +343,10 @@ class Multithread_Optimize:
                 if rxn.falloff.type == 'SRI':   
                     rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
                                                   bnds=[lb, ub], scipy_curvefit=False)
+
+                # comment below, only for testing fit
+                #rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
+                #                                  bnds=[lb, ub], scipy_curvefit=False)
                 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'Troe'
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
