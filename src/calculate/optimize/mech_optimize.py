@@ -56,8 +56,8 @@ class Multithread_Optimize:
             return
         
         # Specify coefficients to be optimized
-        self.coef_opt = coef_opt = self._set_coef_opt()
-        if not coef_opt: # if nothing to optimize, don't!
+        self.coef_opt = self._set_coef_opt()
+        if not self.coef_opt: # if nothing to optimize, don't!
             parent.log.append('No reactions or coefficients set to be optimized\n')
             return         
                 
@@ -141,7 +141,7 @@ class Multithread_Optimize:
             parent.max_processors = 1
         
         # Pass the function to execute
-        self.worker = Worker(parent, self.shocks2run, parent.mech, coef_opt, rxn_coef_opt, rxn_rate_opt)
+        self.worker = Worker(parent, self.shocks2run, parent.mech, self.coef_opt, rxn_coef_opt, rxn_rate_opt)
         self.worker.signals.result.connect(self.on_worker_done)
         self.worker.signals.finished.connect(self.thread_complete)
         self.worker.signals.update.connect(self.update)

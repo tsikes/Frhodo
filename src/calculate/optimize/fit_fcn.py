@@ -58,7 +58,7 @@ def update_mech_coef_opt(mech, coef_opt, x):
             
             mech_changed = True
             mech.coeffs[rxnIdx][coeffs_key][coefName] = x[i]
-    
+
     if mech_changed:
         mech.modify_reactions(mech.coeffs)  # Update mechanism with new coefficients
   
