@@ -107,16 +107,11 @@ class Multithread_Optimize:
                     
             parent.series.rate_bnds(shock)
         
-        shock_conditions = {'T_reactor': [], 'P_reactor': [], 'thermo_mix': []}
-        for shock in self.shocks2run:
-            for shock_condition in shock_conditions:
-                shock_conditions[shock_condition].append(shock[shock_condition])
-        
         # Set conditions of rates to be fit for each coefficient and rates/bnds
-        rxn_coef_opt = self._set_rxn_coef_opt(shock_conditions)
+        rxn_coef_opt = self._set_rxn_coef_opt()
         rxn_rate_opt = self._set_rxn_rate_opt(rxn_coef_opt)
 
-        self._update_gas(rxn_coef_opt, rxn_rate_opt)
+        rxn_coef_opt, rxn_rate_opt = self._update_gas(rxn_coef_opt, rxn_rate_opt)
         
         parent.multiprocessing = parent.multiprocessing_box.isChecked()
         
@@ -185,7 +180,7 @@ class Multithread_Optimize:
 
         return coef_opt                    
     
-    def _set_rxn_coef_opt(self, shock_conditions, min_T_range=1000, min_P_range=1E4):
+    def _set_rxn_coef_opt(self, min_T_range=1000, min_P_range=1E4):
         coef_opt = deepcopy(self.coef_opt)
         mech = self.parent.mech
         rxn_coef_opt = []
@@ -199,6 +194,12 @@ class Multithread_Optimize:
                 rxn_coef_opt[-1]['key'].append(coef['key'])
                 rxn_coef_opt[-1]['coefIdx'].append(coef['coefIdx'])
                 rxn_coef_opt[-1]['coefName'].append(coef['coefName'])
+
+        # Generate shock conditions to be optimized
+        shock_conditions = {'T_reactor': [], 'P_reactor': [], 'thermo_mix': []}
+        for shock in self.shocks2run:
+            for shock_condition in shock_conditions:
+                shock_conditions[shock_condition].append(shock[shock_condition])
 
         for rxn_coef in rxn_coef_opt:
             # Set coefficient initial values and bounds
@@ -405,6 +406,14 @@ class Multithread_Optimize:
 
         if len(rxns_changed) > 0:
             self.coef_opt = coef_opt = self._set_coef_opt()
+
+            # Set conditions of rates to be fit for each coefficient and rates/bnds
+            rxn_coef_opt = self._set_rxn_coef_opt()
+            rxn_rate_opt = self._set_rxn_rate_opt(rxn_coef_opt)
+
+        print(rxn_coef_opt)
+
+        return rxn_coef_opt, rxn_rate_opt
 
     def update(self, result, writeLog=True):
         # Update Hall of Fame
