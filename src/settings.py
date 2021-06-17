@@ -763,8 +763,8 @@ class series:
                 weights_norm = weights.copy()/(integral/t_conv)
                 shock['normalized_weights'] = weights_norm
 
-                # also calculate absolute uncertainties
-                obs_data = shock['exp_data'][:,1]
+            # also calculate absolute uncertainties
+            obs_data = shock['exp_data'][:,1]
             
             if self.parent.exp_unc.unc_type == '%':
                 shock['abs_uncertainties'] = np.sort([obs_data/(1+unc), obs_data*(1+unc)], axis=0).T

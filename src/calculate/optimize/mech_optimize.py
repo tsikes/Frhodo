@@ -54,10 +54,7 @@ class Multithread_Optimize:
         elif parent.optimize_running:
             parent.log.append('Optimize running flag already set to True\n')
             return
-        
-        # Specify coefficients to be optimized
-        self.coef_opt = self._set_coef_opt()
-        if not self.coef_opt: # if nothing to optimize, don't!
+        elif not self._has_opt_rxns(): # if nothing to optimize, don't!
             parent.log.append('No reactions or coefficients set to be optimized\n')
             return         
                 
@@ -107,11 +104,9 @@ class Multithread_Optimize:
                     
             parent.series.rate_bnds(shock)
         
-        # Set conditions of rates to be fit for each coefficient and rates/bnds
-        rxn_coef_opt = self._set_rxn_coef_opt()
-        rxn_rate_opt = self._set_rxn_rate_opt(rxn_coef_opt)
-
-        rxn_coef_opt, rxn_rate_opt = self._update_gas(rxn_coef_opt, rxn_rate_opt)
+        # Set conditions of rates to be fit for each opt coefficient and rates/bnds
+        self._initialize_opt()
+        self._update_gas()
         
         parent.multiprocessing = parent.multiprocessing_box.isChecked()
         
@@ -136,7 +131,7 @@ class Multithread_Optimize:
             parent.max_processors = 1
         
         # Pass the function to execute
-        self.worker = Worker(parent, self.shocks2run, parent.mech, self.coef_opt, rxn_coef_opt, rxn_rate_opt)
+        self.worker = Worker(parent, self.shocks2run, parent.mech, self.coef_opt, self.rxn_coef_opt, self.rxn_rate_opt)
         self.worker.signals.result.connect(self.on_worker_done)
         self.worker.signals.finished.connect(self.thread_complete)
         self.worker.signals.update.connect(self.update)
@@ -158,17 +153,24 @@ class Multithread_Optimize:
             parent.log.append(s, alert=False)
             parent.threadpool.start(self.worker)
     
+    def _has_opt_rxns(self):              
+        mech = self.parent.mech
+        for rxnIdx in range(mech.gas.n_reactions):      # searches all rxns
+            if mech.rate_bnds[rxnIdx]['opt']: 
+                return True
+        return False    
+
+    def _initialize_opt(self):  # initialize various dictionaries for optimization
+        self.coef_opt = self._set_coef_opt()
+        self.rxn_coef_opt = self._set_rxn_coef_opt()
+        self.rxn_rate_opt = self._set_rxn_rate_opt()
+
     def _set_coef_opt(self):                   
         mech = self.parent.mech
         coef_opt = []
         #for rxnIdx in range(mech.gas.n_reactions):      # searches all rxns
         for rxnIdx, rxn in enumerate(mech.gas.reactions()):      # searches all rxns
             if not mech.rate_bnds[rxnIdx]['opt']: continue        # ignore fixed reactions
-            
-            # if Plog convert into Troe falloff
-            if type(rxn) is ct.PlogReaction: 
-                pass
-                # TODO CONVERT FROM PLOG TO FALLOFF  
 
             # check all coefficients
             for bndsKey, subRxn in mech.coeffs_bnds[rxnIdx].items():
@@ -228,7 +230,12 @@ class Multithread_Optimize:
                 P = []
                 for PlogRxn in mech.coeffs[rxnIdx]:
                     P.append(PlogRxn['Pressure'])
-                P_bnds = [np.min(P), np.max(P)]
+                
+                if len(P) < 4:
+                    P = np.geomspace(np.min(P), np.max(P), 4)
+
+                P = np.roll(P, 1)       # put low pressure first followed by high pressure and the rest
+                P[[0, 1]] = P[[1, 0]]
             else:
                 P = np.median(shock_conditions['P_reactor'])
 
@@ -238,7 +245,15 @@ class Multithread_Optimize:
                 rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
                 rxn_coef['P'] = np.ones_like(rxn_coef['T'])*P
 
-            elif type(rxn) in [ct.FalloffReaction, ct.PlogReaction]:
+            elif type(rxn) is ct.PlogReaction:
+                invT = np.linspace(*invT_bnds, 3) # fit 3 temperatures per arrhenius expression
+
+                rxn_coef['invT'], rxn_coef['P'] = np.meshgrid(invT, P)
+                rxn_coef['invT'] = rxn_coef['invT'].flatten()
+                rxn_coef['P'] = rxn_coef['P'].flatten()
+                rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])
+
+            elif type(rxn) is ct.FalloffReaction:
                 rxn_coef['T'] = []
                 rxn_coef['invT'] = []
                 rxn_coef['P'] = []
@@ -250,46 +265,35 @@ class Multithread_Optimize:
                    
                     rxn_coef['invT'].append(np.linspace(*invT_bnds, n_coef))
                     rxn_coef['T'].append(np.divide(10000, rxn_coef['invT'][-1]))
-                    if type(rxn) is ct.PlogReaction:
-                        if coef_type == 'low_rate':
-                            rxn_coef['P'].append(np.ones(n_coef)*P_bnds[0])
-                        elif coef_type == 'high_rate':
-                            rxn_coef['P'].append(np.ones(n_coef)*P_bnds[1])
-                    else:   # is falloff type equation so these are dummy values
-                        if coef_type == 'low_rate':
-                            rxn_coef['P'].append(np.ones(n_coef)*1E-1) # will evaluate LPL
-                        elif coef_type == 'high_rate':
-                            rxn_coef['P'].append(np.ones(n_coef)*1E8) # will evaluate HPL
+                    if coef_type == 'low_rate':
+                        rxn_coef['P'].append(np.ones(n_coef)*1E-1) # will evaluate LPL
+                    elif coef_type == 'high_rate':
+                        rxn_coef['P'].append(np.ones(n_coef)*1E8) # will evaluate HPL
                     
                 rxn_coef['T'].append(np.linspace(*T_bnds, 6)[1:-1])
                 rxn_coef['invT'].append(np.divide(10000, rxn_coef['T'][-1]))
+                rxn_coef['P'].append(np.ones(4)*P) # Doesn't matter, will evaluate median P for falloff
 
-                if type(rxn) is ct.PlogReaction:
-                    rxn_coef['P'].append(np.geomspace(*P_bnds, 6)[1:-1])
-                else:
-                    rxn_coef['P'].append(np.ones(4)*P) # Doesn't matter, will evaluate median P for falloff
-
-                rxn_coef['T'] = np.concatenate(rxn_coef['T'], axis=0)
-                rxn_coef['invT'] = np.concatenate(rxn_coef['invT'], axis=0)
-                rxn_coef['P'] = np.concatenate(rxn_coef['P'], axis=0)
+                for key in ['T', 'invT', 'P']:
+                    rxn_coef[key] = np.concatenate(rxn_coef[key], axis=0)
 
             rxn_coef['X'] = shock_conditions['thermo_mix'][0]   # TODO: IF MIXTURE COMPOSITION FOR DUMMY RATES MATTER CHANGE HERE
 
         return rxn_coef_opt
 
-    def _set_rxn_rate_opt(self, rxn_coef_opt):
+    def _set_rxn_rate_opt(self):
         mech = self.parent.mech
         rxn_rate_opt = {}
 
         # Calculate x0 (initial rates)
         prior_coeffs = mech.reset()  # reset mechanism and get mech that it was
-        rxn_rate_opt['x0'] = rates(rxn_coef_opt, mech)
+        rxn_rate_opt['x0'] = rates(self.rxn_coef_opt, mech)
         
         # Determine rate bounds
         lb = []
         ub = []
         i = 0
-        for rxn_coef in rxn_coef_opt:      # LB and UB are off for troe arrhenius parts
+        for rxn_coef in self.rxn_coef_opt:      # LB and UB are off for troe arrhenius parts
             rxnIdx = rxn_coef['rxnIdx']
             rate_bnds_val = mech.rate_bnds[rxnIdx]['value']
             rate_bnds_type = mech.rate_bnds[rxnIdx]['type']
@@ -310,7 +314,7 @@ class Multithread_Optimize:
 
         return rxn_rate_opt
 
-    def _update_gas(self, rxn_coef_opt, rxn_rate_opt): # TODO: What happens if a second optimization is run?
+    def _update_gas(self): # TODO: What happens if a second optimization is run?
         mech = self.parent.mech
         reset_mech = mech.reset_mech
         coef_opt = self.coef_opt
@@ -328,7 +332,7 @@ class Multithread_Optimize:
         generate_new_mech = False
         rxns_changed = []
         i = 0
-        for rxn_coef_idx, rxn_coef in enumerate(rxn_coef_opt):      # TODO: RXN_COEF_OPT INCORRECT FOR CHANGING RXN TYPES
+        for rxn_coef_idx, rxn_coef in enumerate(self.rxn_coef_opt):      # TODO: RXN_COEF_OPT INCORRECT FOR CHANGING RXN TYPES
             rxnIdx = rxn_coef['rxnIdx']
             rxn = mech.gas.reaction(rxnIdx)
             if type(rxn) in [ct.ElementaryReaction, ct.ThreeBodyReaction]:
@@ -336,7 +340,7 @@ class Multithread_Optimize:
 
             T, P, X = rxn_coef['T'], rxn_coef['P'], rxn_coef['X']
             M = mech.M(rxn, [T, P, X])
-            rates = np.exp(rxn_rate_opt['x0'][i:i+len(T)])
+            rates = np.exp(self.rxn_rate_opt['x0'][i:i+len(T)])
 
             if type(rxn) is ct.FalloffReaction:
                 lb = rxn_coef['coef_bnds']['lower']
@@ -347,8 +351,9 @@ class Multithread_Optimize:
                                                   bnds=[lb, ub], scipy_curvefit=False)
 
                 # comment below, only for testing fit
-                #rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
-                #                                  bnds=[lb, ub], scipy_curvefit=False)
+                print(rxn_coef['coef_x0'])
+                rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
+                                                  bnds=[lb, ub], HPL_LPL_defined=True, scipy_curvefit=True)
                 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'Troe'
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
@@ -405,15 +410,8 @@ class Multithread_Optimize:
             mech.set_mechanism(reset_mech, bnds=bnds)
 
         if len(rxns_changed) > 0:
-            self.coef_opt = coef_opt = self._set_coef_opt()
+            self._initialize_opt()
 
-            # Set conditions of rates to be fit for each coefficient and rates/bnds
-            rxn_coef_opt = self._set_rxn_coef_opt()
-            rxn_rate_opt = self._set_rxn_rate_opt(rxn_coef_opt)
-
-        print(rxn_coef_opt)
-
-        return rxn_coef_opt, rxn_rate_opt
 
     def update(self, result, writeLog=True):
         # Update Hall of Fame

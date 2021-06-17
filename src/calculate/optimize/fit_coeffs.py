@@ -26,7 +26,7 @@ default_Troe_coefNames = ['Ea_0', 'A_0', 'n_0', 'Ea_inf', 'A_inf', 'n_inf', 'A',
 
 troe_falloff_0 = [[0.7, 200, 300, 400],               # (0, 0, 0)
                                                     # (0, 0, 1)
-                [0.05,   1000,  -2000,   3000],     # (0, 1, 0)
+               #[0.05,   1000,  -2000,   3000],     # (0, 1, 0)
                 [-0.3,   200,    -6000,  -50],      # (0, 1, 1)
                 [0.9,   -2000,   500,    10000],    # (1, 0, 0)
                                                     # (1, 0, 1)
@@ -308,7 +308,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
         return s
 
-    def obj_fcn_decorator(fit_fcn, fit_func_jac, x0, idx, s, T, ln_k, bnds, return_sum=True, return_grad=False):
+    def obj_fcn_decorator(fit_fcn, fit_func_jac, x0, idx, s, T, ln_k, return_sum=True, return_grad=False):
         def obj_fcn(x, grad=np.array([])):
             x = x*s + x0[idx]
 
@@ -369,7 +369,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
         idx = alter_idx['high_rate']
         a0 = np.polyfit(np.reciprocal(T[idx]), ln_k[idx], 1)
         x0[idx] = np.array([-a0[0]*Ru, np.exp(a0[1]), 0])
-    
+
     # initial guesses for falloff
     #if len(x0) != 10:
     x0 = [*x0[:6], 0.7, 200, 300, 400] # initial guesses for fitting Troe
@@ -387,7 +387,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             x0[n] = bnds[0][n]
         elif val > bnds[1][n]:
             x0[n] = bnds[1][n]
-    
+ 
     # Fit HPL and LPL (for falloff this is exact, otherwise a guess)
     for arrhenius_type in ['low_rate', 'high_rate']:
         idx = alter_idx[arrhenius_type]
@@ -404,7 +404,6 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
     else:
         idx = alter_idx['all']
 
-    T, M, ln_k = T[idx], M[idx], ln_k[idx]
     #p0 = x0[idx]
     p0 = np.zeros_like(x0[idx])
     s = np.ones_like(x0[idx])
@@ -414,7 +413,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
     fit_func = fit_fcn_decorator(ln_k, x0, M, idx, s=s)
     fit_func_jac = fit_fcn_decorator(ln_k, x0, M, idx, s=s, jac=True)
-    obj_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, s, T, ln_k, bnds)
+    obj_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, s, T, ln_k)
 
     HoF = {'obj_fcn': np.inf, 'coeffs': []}
     for i, Troe_0 in enumerate(troe_falloff_0):
@@ -423,27 +422,30 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
         if scipy_curvefit:
             # for testing scipy least_squares, curve_fit is a wrapper for this fcn
-            #obj_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, T, ln_k, return_sum=False)
-            #obj_fcn_jac = lambda x: fit_func_jac(T, *x)
+            obj_fcn = obj_fcn_decorator(fit_func, fit_func_jac, x0, idx, s, T, ln_k, return_sum=False)
+            obj_fcn_jac = lambda x: fit_func_jac(T, *x)
 
-            #res = least_squares(obj_fcn, p0, method='trf', bounds=bnds, 
-            #                    jac=obj_fcn_jac, x_scale='jac', max_nfev=len(p0)*1000)
+            res = least_squares(obj_fcn, Troe_0, method='trf', bounds=falloff_bnds(Troe_0), 
+                                #jac=obj_fcn_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
 
-            with warnings.catch_warnings():
-                warnings.simplefilter('ignore', OptimizeWarning)
-                try:
-                    x_fit, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='trf', bounds=bnds[idx, :], # dogbox
-                                            jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-                                            #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
-                except:
-                    return
+            print(res)
+
+            #with warnings.catch_warnings():
+            #    warnings.simplefilter('ignore', OptimizeWarning)
+            #    try:
+            #        x_fit, _ = curve_fit(fit_func, T, ln_k, p0=p0, method='trf', bounds=bnds[idx, :], # dogbox
+            #                                jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+            #                                #jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
+            #    except:
+            #        return
 
         else:
             obj_fcn(p0, grad)
             s[:] = calc_s(grad)
             #initial_step_old = calc_s(fit_func_jac(T, *p0))
 
-            opt = nlopt.opt(nlopt.GN_CRS2_LM, len(idx))
+            opt = nlopt.opt(nlopt.GN_CRS2_LM, len(idx)) # nlopt.GN_DIRECT_L, nlopt.GN_DIRECT, nlopt.GN_CRS2_LM
 
             opt.set_min_objective(obj_fcn)
             opt.set_maxeval(5000)
@@ -457,8 +459,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             #opt.set_upper_bounds(bnds[1][idx])
 
             opt.set_initial_step(1)
-
-            opt.set_population(int(np.rint(10*(len(idx)+1)*2)))
+            opt.set_population(int(np.rint(10*(len(idx)+1)*10)))
 
             #local_opt = nlopt.opt(nlopt.LD_MMA, len(idx))
             #local_opt.set_xtol_rel(1E-2)
@@ -531,10 +532,12 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
     #else:
     #    print('fit values found')
 
-    #print(f'x  {x[-4:]}')
-    #print(*ln_k)
-    #fit_k = fit_func(T, *HoF['coeffs'][idx], grad_calc=False)
-    #print(*fit_k)
+    print(x0[:6])
+    print(x[:6])
+    print(f'x  {x[-4:]}')
+    print(*ln_k)
+    fit_k = fit_func(T, *HoF['coeffs'][idx], grad_calc=False)
+    print(*fit_k)
     #rss = 1/2*np.sum((ln_k - fit_k)**2)
     #print(f'ln_k_resid {rss}')
     #print(*HoF['coeffs'][-4:], opt.last_optimum_value())
