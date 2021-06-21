@@ -182,7 +182,7 @@ class Multithread_Optimize:
 
         return coef_opt                    
     
-    def _set_rxn_coef_opt(self, min_T_range=1000, min_P_range=1E4):
+    def _set_rxn_coef_opt(self, min_T_range=600, min_P_range=1E4):
         coef_opt = deepcopy(self.coef_opt)
         mech = self.parent.mech
         rxn_coef_opt = []
@@ -234,8 +234,8 @@ class Multithread_Optimize:
                 if len(P) < 4:
                     P = np.geomspace(np.min(P), np.max(P), 4)
 
-                P = np.roll(P, 1)       # put low pressure first followed by high pressure and the rest
-                P[[0, 1]] = P[[1, 0]]
+                #P = np.roll(P, 1)       # put low pressure first followed by high pressure and the rest
+                #P[[0, 1]] = P[[1, 0]]
             else:
                 P = np.median(shock_conditions['P_reactor'])
 
@@ -246,9 +246,9 @@ class Multithread_Optimize:
                 rxn_coef['P'] = np.ones_like(rxn_coef['T'])*P
 
             elif type(rxn) is ct.PlogReaction:
-                invT = np.linspace(*invT_bnds, 3) # fit 3 temperatures per arrhenius expression
+                invT = np.linspace(*invT_bnds, 8)   # how many temperatures to fit, minimum of 4
 
-                rxn_coef['invT'], rxn_coef['P'] = np.meshgrid(invT, P)
+                rxn_coef['P'], rxn_coef['invT'] = np.meshgrid(P, invT)
                 rxn_coef['invT'] = rxn_coef['invT'].flatten()
                 rxn_coef['P'] = rxn_coef['P'].flatten()
                 rxn_coef['T'] = np.divide(10000, rxn_coef['invT'])

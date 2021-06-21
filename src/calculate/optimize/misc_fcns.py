@@ -8,8 +8,8 @@ import cantera as ct
 
 Ru = ct.gas_constant
 
-min_pos_system_value = np.finfo(float).tiny
-max_pos_system_value = np.finfo(float).max
+min_pos_system_value = np.finfo(float).tiny*1E20
+max_pos_system_value = np.finfo(float).max*1E-20
 min_neg_system_value = -max_pos_system_value
 T_min = 300
 T_max = 6000
@@ -21,24 +21,8 @@ def rates(rxn_coef_opt, mech):
     for rxn_coef in rxn_coef_opt:
         rxnIdx = rxn_coef['rxnIdx']
         for n, (T, P) in enumerate(zip(rxn_coef['T'], rxn_coef['P'])):
-            if n < len(rxn_coef['key']):
-                coeffs_key = rxn_coef['key'][n]['coeffs']
-                coeffs_bnds_key = rxn_coef['key'][n]['coeffs_bnds']
-            else:
-                coeffs_bnds_key = coeffs_key = None           
-
-            if type(coeffs_bnds_key) is str and 'rate' in coeffs_bnds_key:
-                A = mech.coeffs[rxnIdx][coeffs_key]['pre_exponential_factor']
-                b = mech.coeffs[rxnIdx][coeffs_key]['temperature_exponent']
-                Ea = mech.coeffs[rxnIdx][coeffs_key]['activation_energy']
-
-                k = A*T**b*np.exp(-Ea/Ru/T)
-
-                output.append(k)
-
-            else:
-                mech.set_TPX(T, P)
-                output.append(mech.gas.forward_rate_constants[rxnIdx])
+            mech.set_TPX(T, P)
+            output.append(mech.gas.forward_rate_constants[rxnIdx])
             
     return np.log(output)
 

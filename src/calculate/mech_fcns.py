@@ -49,7 +49,7 @@ class Chemical_Mechanism:
                 yaml_txt = path['Cantera_Mech'].read_text()
                 self.gas = ct.Solution(yaml=yaml_txt)
                 for surfname in surfaces:
-                    phase = ct.Interface(outName, surfname, [self.gas])
+                    phase = ct.Interface(mech_path, surfname, [self.gas])
                 print('PASSED.')
             except RuntimeError as e:
                 print('FAILED.')
