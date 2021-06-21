@@ -7,7 +7,7 @@ import cantera as ct
 import nlopt
 import warnings
 from copy import deepcopy
-from scipy.optimize import curve_fit, OptimizeWarning, least_squares, approx_fprime
+from scipy.optimize import curve_fit, minimize, OptimizeWarning, least_squares, approx_fprime
 from timeit import default_timer as timer
 import itertools
 
@@ -553,6 +553,9 @@ def fit_Troe_old(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], 
 def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scipy_curvefit=False, HPL_LPL_defined=True):    
     def fit_const_T_decorator(ln_k, jac=False):
         def ln_Troe(M, *x):
+            if len(x) == 1:
+                x = x[0]
+
             [k_0, k_inf, Fcent] = np.power(10, x)
             with np.errstate(all='raise'):
                 try:
@@ -697,6 +700,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             print('')
 
         res = np.array(res)
+
         # Fit HPL and LPL
         for res_idx, arrhenius_type in enumerate(['low_rate', 'high_rate']):
             idx = alter_idx[arrhenius_type]
@@ -727,39 +731,56 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
         print(x)
 
-    # initial guesses for falloff
-    #if len(x0) != 10:
-    x0 = [*x0[:6], 0.7, 200, 300, 400] # initial guesses for fitting Troe
-    x0 = np.array(x0)
+    else:
+        # only valid initial guesses
+        bnds = deepcopy(bnds)
+        for n, val in enumerate(x0):
+            if val < bnds[0][n]:
+                x0[n] = bnds[0][n]
+            elif val > bnds[1][n]:
+                x0[n] = bnds[1][n]
+ 
+        # Fit HPL and LPL
+        k = {}
+        for arrhenius_type in ['low_rate', 'high_rate']:
+            idx = alter_idx[arrhenius_type]
+            if len(idx) > 0:
+                x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]]) # [Ea, A, n]
+        
+        print(x0)
+
+        # Fit Falloff
+        ln_k_0 = np.log(x0[1]) + x0[2]*np.log(T) - x0[0]/(Ru*T)
+        ln_k_inf = np.log(x0[4]) + x0[5]*np.log(T) - x0[3]/(Ru*T)
+
+        res = []
+        for idx in alter_idx['falloff_parameters']:  # keep T constant and fit log_k_0, log_k_inf, log_Fcent
+
+            fit_func = lambda x: (fit_const_T_decorator(ln_k[idx], T[idx])(M[idx], [ln_k_0[idx], ln_k_inf[idx], x[0]]) - ln_k[idx])**2 # only fitting Fcent
+
+            if len(res) == 0:
+                p0 = [-0.2]                      # log(k_0), log(k_inf), log(Fcent)
+                p0 = [np.log(0.557)]
+            else:
+                p0 = np.log10(res[-1][1:])
+
+            p_bnds = [[-8, 0]]  # log(k_0), log(k_inf), log(Fcent)   not sure if lower Fcent bnd should be -2 or -1
+
+            temp_res = minimize(fit_func, x0=p0, method='L-BFGS-B', bounds=p_bnds, jac='2-point')
+
+            print(temp_res)
+
+            res.append([T[idx_start], *np.power(10, x_fit)])
+
+            cmp = np.array([T[idx], M[idx], ln_k[idx], fit_func(M[idx], *x_fit)]).T
+            for entry in cmp:
+                print(*entry)
+            print('')
+
+        res = np.array(res)
+
 
     A_idx = [1, 4]
-    #A_idx = None
-    #if set(['A_0', 'A_inf']) & set(coefNames):
-    #    A_idx = [i for i, coef in enumerate(coefNames) if coef in ['A_0', 'A_inf']]
-
-    # only valid initial guesses
-    bnds = deepcopy(bnds)
-    for n, val in enumerate(x0):
-        if val < bnds[0][n]:
-            x0[n] = bnds[0][n]
-        elif val > bnds[1][n]:
-            x0[n] = bnds[1][n]
- 
-    # Fit HPL and LPL (for falloff this is exact, otherwise a guess)
-    for arrhenius_type in ['low_rate', 'high_rate']:
-        idx = alter_idx[arrhenius_type]
-        if len(idx) > 0:
-            x0[idx] = fit_arrhenius(rates[idx], T[idx], x0=x0[idx], bnds=[bnds[0][idx], bnds[1][idx]])
-
-    if A_idx is not None:
-        x0[A_idx] = np.log(x0[A_idx])
-        bnds[0][A_idx] = np.log(bnds[0][A_idx])
-        bnds[1][A_idx] = np.log(bnds[1][A_idx])
-
-    if HPL_LPL_defined: # Fit falloff
-        idx = alter_idx['falloff_parameters']    
-    else:
-        idx = alter_idx['all']
 
     #p0 = x0[idx]
     p0 = np.zeros_like(x0[idx])

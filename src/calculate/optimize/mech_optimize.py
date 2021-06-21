@@ -353,7 +353,7 @@ class Multithread_Optimize:
                 # comment below, only for testing fit
                 print(rxn_coef['coef_x0'])
                 rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
-                                                  bnds=[lb, ub], HPL_LPL_defined=True, scipy_curvefit=True)
+                                                  bnds=[lb, ub], HPL_LPL_defined=True, scipy_curvefit=False)
                 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'Troe'
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
