@@ -575,6 +575,8 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
             ln_k_calc = np.log(k_inf*P_r/(1 + P_r)) + ln_F
 
+            print(np.sum((ln_k - ln_k_calc)**2))
+
             return ln_k_calc
         return ln_Troe
 
@@ -755,30 +757,32 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
         res = []
         for idx in alter_idx['falloff_parameters']:  # keep T constant and fit log_k_0, log_k_inf, log_Fcent
-
-            fit_func = lambda x: (fit_const_T_decorator(ln_k[idx], T[idx])(M[idx], [ln_k_0[idx], ln_k_inf[idx], x[0]]) - ln_k[idx])**2 # only fitting Fcent
-
+            print(idx)
+            #fit_func = lambda x: (fit_const_T_decorator(ln_k[idx], T[idx])(M[idx], [ln_k_0[idx], ln_k_inf[idx], x[0]]) - ln_k[idx])**2 # only fitting Fcent
+            fit_func = lambda M, x: fit_const_T_decorator(ln_k[idx], T[idx])(M, [ln_k_0[idx], ln_k_inf[idx], x])
             if len(res) == 0:
                 p0 = [-0.2]                      # log(k_0), log(k_inf), log(Fcent)
                 p0 = [np.log(0.557)]
             else:
                 p0 = np.log10(res[-1][1:])
 
-            p_bnds = [[-8, 0]]  # log(k_0), log(k_inf), log(Fcent)   not sure if lower Fcent bnd should be -2 or -1
+            p_bnds = [[-8], [0]]  # log(k_0), log(k_inf), log(Fcent)   not sure if lower Fcent bnd should be -2 or -1
 
-            temp_res = minimize(fit_func, x0=p0, method='L-BFGS-B', bounds=p_bnds, jac='2-point')
+            #with warnings.catch_warnings():
+            #    warnings.simplefilter('ignore', OptimizeWarning)
+            x_fit, _ = curve_fit(fit_func, M[idx], ln_k[idx], p0=p0, method='trf', bounds=p_bnds, # dogbox
+                                                    #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                                    jac='2-point', x_scale='jac', max_nfev=len(p0)*1000)
 
-            print(temp_res)
+            #temp_res = minimize(fit_func, x0=p0, method='L-BFGS-B', bounds=p_bnds, jac='2-point')
 
-            res.append([T[idx_start], *np.power(10, x_fit)])
+            print(x_fit)
 
-            cmp = np.array([T[idx], M[idx], ln_k[idx], fit_func(M[idx], *x_fit)]).T
-            for entry in cmp:
-                print(*entry)
-            print('')
+            res.append([T[idx], *np.power(10, x_fit)])
 
         res = np.array(res)
 
+        print(res)
 
     A_idx = [1, 4]
 
