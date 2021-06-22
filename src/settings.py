@@ -188,6 +188,7 @@ class Path:
     
     def shock_output(self):
         parent = self.parent
+        log = parent.log
         
         # Add Exp_set_name if exists
         shock_num = str(parent.var['shock_choice'])
@@ -199,7 +200,12 @@ class Path:
         
         # Create folders if needed
         if not parent.path['output_dir'].exists():
-            parent.path['output_dir'].mkdir(exist_ok=True, parents=True)
+            try:
+                parent.path['output_dir'].mkdir(exist_ok=True, parents=True)
+            except (IOError, FileNotFoundError) as e:
+                log.append('Error in saving:')
+                log.append(e)  
+                return
         
         parent.path['Sim log'] = parent.path['output_dir'] / 'Sim log.txt'
         

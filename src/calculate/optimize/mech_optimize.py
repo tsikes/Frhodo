@@ -182,7 +182,7 @@ class Multithread_Optimize:
 
         return coef_opt                    
     
-    def _set_rxn_coef_opt(self, min_T_range=600, min_P_range=1E4):
+    def _set_rxn_coef_opt(self, min_T_range=600):
         coef_opt = deepcopy(self.coef_opt)
         mech = self.parent.mech
         rxn_coef_opt = []
@@ -351,9 +351,9 @@ class Multithread_Optimize:
                                                   bnds=[lb, ub], scipy_curvefit=False)
 
                 # comment below, only for testing fit
-                print(rxn_coef['coef_x0'])
-                rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
-                                                  bnds=[lb, ub], HPL_LPL_defined=True, scipy_curvefit=False)
+                #print(rxn_coef['coef_x0'])
+                #rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
+                #                                  bnds=[lb, ub], HPL_LPL_defined=True, scipy_curvefit=False)
                 
                 mech.coeffs[rxnIdx]['falloff_type'] = 'Troe'
                 mech.coeffs[rxnIdx]['falloff_parameters'] = rxn_coef['coef_x0'][6:]
