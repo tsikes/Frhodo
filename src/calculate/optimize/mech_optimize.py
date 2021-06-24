@@ -16,7 +16,7 @@ from calculate.optimize.fit_fcn import update_mech_coef_opt
 from calculate.optimize.misc_fcns import rates, set_bnds
 from calculate.optimize.fit_coeffs import fit_Troe
 
-
+Ru = ct.gas_constant
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
 
 class Multithread_Optimize:
@@ -295,12 +295,24 @@ class Multithread_Optimize:
         i = 0
         for rxn_coef in self.rxn_coef_opt:      # LB and UB are off for troe arrhenius parts
             rxnIdx = rxn_coef['rxnIdx']
+            rxn = mech.gas.reaction(rxnIdx)
             rate_bnds_val = mech.rate_bnds[rxnIdx]['value']
             rate_bnds_type = mech.rate_bnds[rxnIdx]['type']
-            for T, P in zip(rxn_coef['T'], rxn_coef['P']):
-                bnds = mech.rate_bnds[rxnIdx]['limits'](np.exp(rxn_rate_opt['x0'][i]))
+            for n, (T, P) in enumerate(zip(rxn_coef['T'], rxn_coef['P'])):
+                if type(rxn) is ct.FalloffReaction: # if falloff, change arrhenius rates to LPL/HPL
+                    coefName = rxn_coef['coefName'][n]
+                    if coefName in default_arrhenius_coefNames:
+                        key = rxn_coef['key'][n]
+                        x = []
+                        for ArrheniusCoefName in default_arrhenius_coefNames:
+                            x.append(mech.coeffs_bnds[rxnIdx][key['coeffs_bnds']][ArrheniusCoefName]['resetVal'])
+
+                        rxn_rate_opt['x0'][i] = np.log(x[1]) + x[2]*np.log(T) - x[0]/(Ru*T)
+
+                ln_rate = rxn_rate_opt['x0'][i]
+                bnds = mech.rate_bnds[rxnIdx]['limits'](np.exp(ln_rate))
                 bnds = np.sort(np.log(bnds))  # operate on ln and scale
-                scaled_bnds = np.sort(bnds/rxn_rate_opt['x0'][i])
+                scaled_bnds = np.sort(bnds/ln_rate)
                 lb.append(scaled_bnds[0])
                 ub.append(scaled_bnds[1])
                 

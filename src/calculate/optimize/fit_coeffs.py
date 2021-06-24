@@ -576,33 +576,42 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             return ln_k_calc
         return ln_Troe
 
-    def fit_Fcent_decorator(Fcent, jac=False):
-        def Fcent_calc(T, *x):
+    def fit_ln_Fcent_decorator(Fcent, jac=False):
+        def set_coeffs(x):
             A = x[0]
-            [T3, T1, T2] = np.exp(x[1:])
+            T3, T1 = 1000/np.exp(x[1]), 1000/np.exp(x[2])
+            T2 = 100*np.exp(x[3])
 
-            res = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
+            #A = np.log(x[0])
+            #T3, T1 = 1000/x[1], 1000/x[2]
+            #T2 = x[3]*100
 
-            return res
+            return [A, T3, T1, T2]
 
-        def Fcent_calc_jac(T, *x):
-            A = x[0]
-            [T3, T1, T2] = np.exp(x[1:])
+        def ln_Fcent_calc(T, *x):
+            [A, T3, T1, T2] = set_coeffs(x)
+
+            Fcent_fit = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
+
+            return np.log(Fcent_fit)
+
+        def ln_Fcent_calc_jac(T, *x):  # Not for ln(Fcent) need to redo if using
+            [A, T3, T1, T2] = set_coeffs(x)
 
             jac = []
-            jac.append(np.exp(-T/T1) - np.exp(-T/T3))  # dFcent/dA
-            jac.append((1-A)*T/(T3**2)*np.exp(-T/T3))  # dFcent/dT3
-            jac.append(A*T/(T1**2)*np.exp(-T/T1))      # dFcent/dT1
-            jac.append(-1/T*np.exp(-T2/T))             # dFcent/dT2
+            jac.append(1/A*(np.exp(-T/T1) - np.exp(-T/T3)))  # dln_Fcent/dA
+            jac.append((1-A)*T/(T3**3)*np.exp(-T/T3))        # dln_Fcent/dT3
+            jac.append(A*T/(T1**3)*np.exp(-T/T1))            # dln_Fcent/dT1
+            jac.append(-1/(T2*T)*np.exp(-T2/T))              # dln_Fcent/dT2
 
             jac = np.vstack(jac).T
 
             return jac
 
         if not jac:
-            return Fcent_calc
+            return ln_Fcent_calc
         elif jac:
-            return Fcent_calc_jac
+            return ln_Fcent_calc_jac
     
     def calc_s(grad):
         x = np.abs(grad)
@@ -673,9 +682,9 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             if len(res) == 0:
                 p0 = [27, 14, -0.5]                      # ln(k_0), ln(k_inf), ln(Fcent)
             else:
-                p0 = np.log10(res[-1][1:])
+                p0 = np.log(res[-1][1:])
 
-            p_bnds = [[-27.631, -27.631, -18.421], [69.078, 69.078, 0]]  # ln(k_0), ln(k_inf), ln(Fcent)
+            p_bnds = np.log([[1E-12, 1E-12, 1E-8], [1E30, 1E30, 1]])  # ln(k_0), ln(k_inf), ln(Fcent)
 
             x_fit, _ = curve_fit(fit_func, M[idx], ln_k[idx], p0=p0, method='trf', bounds=p_bnds, # dogbox
                                                     #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
@@ -697,27 +706,33 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
                 x[idx] = fit_arrhenius(res[:, res_idx+1], res[:,0], bnds=[bnds[0][idx], bnds[1][idx]], loss='huber') # 'soft_l1', 'huber', 'cauchy', 'arctan'
 
                 T = res[:,0]
-                cmp = np.array([10000/T, np.ln(res[:, res_idx+1]), np.ln(x[idx[1]]*T**x[idx[2]]*np.exp(-x[idx[0]]/Ru/T))]).T
+                cmp = np.array([10000/T, np.log(res[:, res_idx+1]), np.log(x[idx[1]]*T**x[idx[2]]*np.exp(-x[idx[0]]/Ru/T))]).T
                 for entry in cmp:
                     print(*entry)
                 print('')
         
         # Fit falloff
         idx = alter_idx['falloff_parameters']
-        fit_func = fit_Fcent_decorator(res[:,3])
-        fit_func_jac = fit_Fcent_decorator(res[:,3], jac=True)
-        p0 = [0.6, 5.3, 6.2, 6.7]
-        p_bnds = [[-100, 3.4, 3.4, 3.4], [1, 69.078, 69.078, 69.078]]
+        fit_func = fit_ln_Fcent_decorator(res[:,3])
+        fit_func_jac = fit_ln_Fcent_decorator(res[:,3], jac=True)
+        p0 = [0.6, np.log(1000/200), np.log(1000/600), np.log(1200/100)]
+        p_bnds = [[-10, np.log(1E-37), np.log(1E-37), np.log(30/100)], 
+                  [1, np.log(1000/30), np.log(1000/30), np.log(1E38)]]
 
-        x_fit, _ = curve_fit(fit_func, res[:,0], res[:,3], p0=p0, method='trf', bounds=p_bnds, # dogbox
+        #p0 = [np.exp(0.6), 1000/200, 1000/600, 1200/100]
+        #p_bnds = [[np.exp(-100), 1E-37, 1E-37, 30/100], [np.exp(1), 1000/30, 1000/30, 1E38]]
+
+        x_fit, _ = curve_fit(fit_func, res[:,0], np.log(res[:,3]), p0=p0, method='trf', bounds=p_bnds, # dogbox
                                                     #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
                                                     jac='2-point', x_scale='jac', max_nfev=len(p0)*1000, loss='huber')
 
-        cmp = np.array([res[:,0], res[:,3], fit_func(res[:,0], *x_fit)]).T
+        cmp = np.array([res[:,0], res[:,3], np.exp(fit_func(res[:,0], *x_fit))]).T
         for entry in cmp:
             print(*entry)
 
-        x[idx] = [x_fit[0], *np.exp(x_fit[1:])]
+        x[idx] = [x_fit[0], 1000/np.exp(x_fit[1]), 1000/np.exp(x_fit[2]), 100*np.exp(x_fit[3])]
+
+        #x[idx] = [np.log(x_fit[0]), 1000/x_fit[1], 1000/x_fit[2], 100*x_fit[3]]
 
     else:
         # only valid initial guesses
@@ -744,11 +759,11 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             #fit_func = lambda x: (fit_const_T_decorator(ln_k[idx], T[idx])(M[idx], [ln_k_0[idx], ln_k_inf[idx], x[0]]) - ln_k[idx])**2 # only fitting Fcent
             fit_func = lambda M, x: fit_const_T_decorator(ln_k[idx], T[idx])(M, [ln_k_0[idx], ln_k_inf[idx], x])
             if len(res) == 0:
-                p0 = [-0.5]                      # log(k_0), log(k_inf), log(Fcent)
+                p0 = [-0.5]                      # ln(k_0), ln(k_inf), ln(Fcent)
             else:
                 p0 = np.log(res[-1][1:])
 
-            p_bnds = [[-18.421], [0]]  # ln(k_0), ln(k_inf), ln(Fcent)   not sure if lower Fcent bnd should be -2 or -1
+            p_bnds = [[np.log(1E-8)], [0]]  # ln(Fcent)
 
             with warnings.catch_warnings():
                 warnings.simplefilter('ignore', OptimizeWarning)
@@ -760,29 +775,41 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
             res.append([T[idx], *np.exp(x_fit)])
 
+            #cmp = np.array([T[idx], M[idx], ln_k[idx], fit_func(M[idx], *x_fit)])
+            #print(*cmp)
+
         res = np.array(res)
 
         # Fit falloff
         idx = alter_idx['falloff_parameters']
-        fit_func = fit_Fcent_decorator(res[:,1])
-        fit_func_jac = fit_Fcent_decorator(res[:,1], jac=True)
-        p0 = [0.6, 5.3, 6.2, 6.7]
-        p_bnds = [[-100, 3.4, 3.4, 3.4], [1, 69.078, 69.078, 69.078]]
+        fit_func = fit_ln_Fcent_decorator(res[:,1])
+        fit_func_jac = fit_ln_Fcent_decorator(res[:,1], jac=True)
+        p0 = [0.6, np.log(1000/200), np.log(1000/600), np.log(1200/100)]
+        p_bnds = [[-10, np.log(1E-37), np.log(1E-37), np.log(30/100)], 
+                  [1, np.log(1000/30), np.log(1000/30), np.log(1E38)]]
+
+        #p0 = [np.exp(0.6), 1000/200, 1000/600, 1200/100]
+        #p_bnds = [[np.exp(-100), 1E-37, 1E-37, 30/100], [np.exp(1), 1000/30, 1000/30, 1E38]]
 
         with warnings.catch_warnings():
             warnings.simplefilter('ignore', OptimizeWarning)
-            x_fit, _ = curve_fit(fit_func, res[:,0], res[:,1], p0=p0, method='trf', bounds=p_bnds, # dogbox
+            x_fit, _ = curve_fit(fit_func, res[:,0], np.log(res[:,1]), p0=p0, method='trf', bounds=p_bnds, # dogbox
                                                         #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
                                                         jac='2-point', x_scale='jac', max_nfev=len(p0)*1000, loss='huber')
         
         #cmp = np.array([res[:,0], res[:,1], fit_func(res[:,0], *x_fit)]).T
         #for entry in cmp:
         #    print(*entry)
+        #print('')
 
-        x[idx] = [x_fit[0], *np.exp(x_fit[1:])]
+        x[idx] = [x_fit[0], 1000/np.exp(x_fit[1]), 1000/np.exp(x_fit[2]), 100*np.exp(x_fit[3])]
 
-        Fcent = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
-        fit_func = lambda M, x: fit_const_T_decorator(ln_k[idx], T[idx])(M, [ln_k_0[idx], ln_k_inf[idx], Fcent])
+        #x[idx] = [np.log(x_fit[0]), 1000/x_fit[1], 1000/x_fit[2], 100*x_fit[3]]
+
+        #Fcent = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
+        #fit_func = lambda M, x: fit_const_T_decorator(ln_k[idx], T[idx])(M, [ln_k_0[idx], ln_k_inf[idx], Fcent])
+
+        print(x[-4:])
     
     return x
 
