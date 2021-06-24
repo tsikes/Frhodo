@@ -7,7 +7,7 @@ import cantera as ct
 import nlopt
 import warnings
 from copy import deepcopy
-from scipy.optimize import curve_fit, minimize, OptimizeWarning, least_squares, approx_fprime
+from scipy.optimize import curve_fit, minimize, root_scalar, OptimizeWarning, least_squares, approx_fprime
 from timeit import default_timer as timer
 import itertools
 
@@ -576,84 +576,185 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
             return ln_k_calc
         return ln_Troe
 
-    def fit_ln_Fcent_decorator(Fcent, jac=False):
-        def set_coeffs(x):
-            A = x[0]
-            T3, T1 = 1000/np.exp(x[1]), 1000/np.exp(x[2])
-            T2 = 100*np.exp(x[3])
+    def fit_falloff_parameters(T, Fcent_calc, x0=[0.6, 200, 600, 1200], use_scipy=True):
+        def fit_ln_Fcent_decorator(Fcent, jac=False):
+            def set_coeffs(x):
+                A = x[0]
+                T3, T1 = 1000/np.exp(x[1]), 1000/np.exp(x[2])
+                T2 = 100*np.exp(x[3])
 
-            #A = np.log(x[0])
-            #T3, T1 = 1000/x[1], 1000/x[2]
-            #T2 = x[3]*100
+                #A = np.log(x[0])
+                #T3, T1 = 1000/x[1], 1000/x[2]
+                #T2 = x[3]*100
 
-            return [A, T3, T1, T2]
+                return [A, T3, T1, T2]
 
-        def ln_Fcent_calc(T, *x):
-            [A, T3, T1, T2] = set_coeffs(x)
+            def ln_Fcent_calc(T, *x):
+                [A, T3, T1, T2] = set_coeffs(x)
 
-            Fcent_fit = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
+                Fcent_fit = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
+                Fcent_fit[Fcent_fit <= 0.0] = 100
 
-            return np.log(Fcent_fit)
+                return np.log(Fcent_fit)
 
-        def ln_Fcent_calc_jac(T, *x):  # Not for ln(Fcent) need to redo if using
-            [A, T3, T1, T2] = set_coeffs(x)
+            def ln_Fcent_calc_jac(T, *x):
+                [A, T3, T1, T2] = set_coeffs(x) # A, B, C, D = x
 
-            jac = []
-            jac.append(1/A*(np.exp(-T/T1) - np.exp(-T/T3)))  # dln_Fcent/dA
-            jac.append((1-A)*T/(T3**3)*np.exp(-T/T3))        # dln_Fcent/dT3
-            jac.append(A*T/(T1**3)*np.exp(-T/T1))            # dln_Fcent/dT1
-            jac.append(-1/(T2*T)*np.exp(-T2/T))              # dln_Fcent/dT2
+                Fcent_fit = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
 
-            jac = np.vstack(jac).T
+                jac = []
+                jac.append(1/Fcent_fit*(np.exp(-T/T1) - np.exp(-T/T3))) # dln_Fcent/dA
+                jac.append(-1/Fcent_fit*(1-A)*T/T3*np.exp(-T/T3))       # dln_Fcent/dB
+                jac.append(-1/Fcent_fit*A*T/T1*np.exp(-T/T1))           # dln_Fcent/dC
+                jac.append(1/Fcent_fit*-1/T*np.exp(-T2/T))              # dln_Fcent/dD
 
-            return jac
+                jac = np.vstack(jac).T
 
-        if not jac:
-            return ln_Fcent_calc
-        elif jac:
-            return ln_Fcent_calc_jac
-    
-    def calc_s(grad):
-        x = np.abs(grad)
-        if (x < min_pos_system_value).all():
-            x = np.ones_like(x)*1E-14
-        else:
-            x[x < min_pos_system_value] = 10**(OoM(np.min(x[x>=min_pos_system_value])) - 1)  # TODO: MAKE THIS BETTER running into problem when s is zero, this is a janky workaround
-        
-        s = 1/x
-        s = s/np.min(s)
+                return jac
 
-        return s
+            if not jac:
+                return ln_Fcent_calc
+            elif jac:
+                return ln_Fcent_calc_jac
 
-    def obj_fcn_decorator(fit_fcn, fit_func_jac, x0, idx, s, T, ln_k, return_sum=True, return_grad=False):
-        def obj_fcn(x, grad=np.array([])):
-            x = x*s + x0[idx]
+        def obj_fcn_decorator(fit_fcn, fit_func_jac, T, y, x0, s, return_sum=True, return_grad=False):
+            def obj_fcn(x, grad=np.array([])):
+                x = x*s + x0
 
-            #warnings.simplefilter('ignore', OptimizeWarning)
-            #x, _ = curve_fit(fit_func, T, ln_k, p0=x, method='trf', bounds=bnds, # dogbox
-            #                 jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-
-            resid = fit_func(T, *x) - ln_k
-            if return_sum:              
-                obj_val = generalized_loss_fcn(resid).sum()
-            else:
-                obj_val = resid
-
-            #s[:] = np.abs(np.sum(loss*fit_func_jac(T, *x).T, axis=1))
-            if grad.size > 0:
-                jac = fit_func_jac(T, *x)
-                if np.isfinite(jac).all():
-                    #print(gradient, s)
-                    with np.errstate(all='ignore'):
-                        gradient = np.sum(jac.T*resid, axis=1)*s
-                        gradient[gradient == np.inf] = max_pos_system_value
+                resid = fit_func(T, *x) - y
+                if return_sum:              
+                    obj_val = generalized_loss_fcn(resid).sum()
                 else:
-                    gradient = np.ones_like(x0[idx])*max_pos_system_value
+                    obj_val = resid
 
-                grad[:] = gradient
+                #s[:] = np.abs(np.sum(loss*fit_func_jac(T, *x).T, axis=1))
+                if grad.size > 0:
+                    jac = fit_func_jac(T, *x)
+                    if np.isfinite(jac).all():
+                        #print(gradient, s)
+                        with np.errstate(all='ignore'):
+                            gradient = np.sum(jac.T*resid, axis=1)*s
+                            gradient[gradient == np.inf] = max_pos_system_value
+                    else:
+                        gradient = np.ones_like(x0)*max_pos_system_value
 
-            return obj_val
-        return obj_fcn
+                    grad[:] = gradient
+
+                return obj_val
+            return obj_fcn
+
+        def constraint_fcn_decorator(x0, s, Fcent_min=1E-8, Tmin=100, Tmax=20000):
+            def set_coeffs(x):
+                A = x[0]
+                T3, T1 = 1000/np.exp(x[1]), 1000/np.exp(x[2])
+                T2 = 100*np.exp(x[3])
+
+                #A = np.log(x[0])
+                #T3, T1 = 1000/x[1], 1000/x[2]
+                #T2 = x[3]*100
+
+                return [A, T3, T1, T2]
+
+            def f_fp(T, A, T3, T1, T2, fprime=False, fprime2=False): # dFcent_dT 
+                f = T2/T**2*np.exp(-T2/T) - (1-A)/T3*np.exp(-T/T3) - A/T1*np.exp(-T/T1)
+
+                if not fprime and not fprime2:
+                    return f
+                elif fprime and not fprime2:
+                    fp = T2*(T2 - 2*T)/T**4*np.exp(-T2/T) + (1-A)/T3**2*np.exp(-T/T3) +A/T1**2*np.exp(-T/T1)
+                    return f, fp
+
+            def constraint_fcn(x, grad=np.array([])):
+                [A, T3, T1, T2] = set_coeffs(x)
+
+                try:
+                    T_deriv_eq_0 = root_scalar(lambda T: f_fp(A, T3, T1, T2), 
+                                               x0=(Tmax+Tmin)/4, x1=3*(Tmax+Tmin)/4, method='secant')
+                    T = np.array([Tmin, T_deriv_eq_0, Tmax])
+                except:
+                    T = np.array([Tmin, Tmax])
+
+                Fcent = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
+                constraint_val = np.min(Fcent_min - Fcent)
+
+                #if grad.size > 0:
+                #    jac = fit_func_jac(T, *x)
+                #    if np.isfinite(jac).all():
+                #        #print(gradient, s)
+                #        with np.errstate(all='ignore'):
+                #            gradient = np.sum(jac.T*resid, axis=1)*s
+                #            gradient[gradient == np.inf] = max_pos_system_value
+                #    else:
+                #        gradient = np.ones_like(x0)*max_pos_system_value
+
+                #    grad[:] = gradient
+
+                return constraint_val
+            return constraint_fcn
+
+        fit_func = fit_ln_Fcent_decorator(Fcent_calc)
+        fit_func_jac = fit_ln_Fcent_decorator(Fcent_calc, jac=True)
+
+        p0 = [x0[0], np.log(1000/x0[1]), np.log(1000/x0[2]), np.log(x0[3]/100)]
+        p_bnds = [[-100, np.log(1E-37), np.log(1E-37), np.log(30/100)], 
+                  [1, np.log(1000/30), np.log(1000/30), np.log(1E38)]]
+
+        #p0 = [np.exp(0.6), 1000/200, 1000/600, 1200/100]
+        #p_bnds = [[np.exp(-100), 1E-37, 1E-37, 30/100], [np.exp(1), 1000/30, 1000/30, 1E38]]
+
+        #if use_scipy:
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', OptimizeWarning)
+            x_fit, _ = curve_fit(fit_func, T, np.log(Fcent_calc), p0=p0, method='trf', bounds=p_bnds, # dogbox
+                                                        #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
+                                                        jac='2-point', x_scale='jac', max_nfev=len(p0)*1000, loss='huber')
+
+        print('scipy:', x_fit)
+        cmp = np.array([T, Fcent_calc, np.exp(fit_func(T, *x_fit))]).T
+        for entry in cmp:
+            print(*entry)
+        print('')
+
+        #else:
+        obj_fcn = obj_fcn_decorator(fit_func, fit_func_jac, T, np.log(Fcent_calc), p0, [1,1,1,1])
+        constraint_func = constraint_fcn_decorator(p0, [1,1,1,1])
+
+        opt = nlopt.opt(nlopt.AUGLAG, 4) # nlopt.GN_DIRECT_L, nlopt.GN_DIRECT, nlopt.GN_CRS2_LM
+
+        opt.set_min_objective(obj_fcn)
+        opt.set_maxeval(5000)
+        opt.set_maxtime(5)
+
+        opt.set_xtol_rel(1E-8)
+        opt.set_ftol_rel(1E-8)
+
+        opt.set_lower_bounds(p_bnds[0])
+        opt.set_upper_bounds(p_bnds[1])
+
+        opt.add_inequality_constraint(constraint_func)
+
+        opt.set_initial_step(1E-6)
+        #opt.set_population(int(np.rint(10*(len(idx)+1)*10)))
+
+        local_opt = nlopt.opt(nlopt.GN_DIRECT, 4) # LN_COBYLA, LN_SBPLX
+        local_opt.set_xtol_rel(1E-8)
+        local_opt.set_ftol_rel(1E-8)
+        local_opt.set_initial_step(1E-6)
+            
+        opt.set_local_optimizer(local_opt)
+        x_fit = opt.optimize(p0) # optimize!
+
+        print('nlopt:', x_fit)
+        cmp = np.array([T, Fcent_calc, np.exp(fit_func(T, *x_fit))]).T
+        for entry in cmp:
+            print(*entry)
+        print('')
+
+        res = [x_fit[0], 1000/np.exp(x_fit[1]), 1000/np.exp(x_fit[2]), 100*np.exp(x_fit[3])]
+
+        #res = [np.log(x_fit[0]), 1000/x_fit[1], 1000/x_fit[2], 100*x_fit[3]]
+
+        return res
     
     ln_k = np.log(rates)
     x0 = np.array(x0)
@@ -713,26 +814,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
         
         # Fit falloff
         idx = alter_idx['falloff_parameters']
-        fit_func = fit_ln_Fcent_decorator(res[:,3])
-        fit_func_jac = fit_ln_Fcent_decorator(res[:,3], jac=True)
-        p0 = [0.6, np.log(1000/200), np.log(1000/600), np.log(1200/100)]
-        p_bnds = [[-10, np.log(1E-37), np.log(1E-37), np.log(30/100)], 
-                  [1, np.log(1000/30), np.log(1000/30), np.log(1E38)]]
-
-        #p0 = [np.exp(0.6), 1000/200, 1000/600, 1200/100]
-        #p_bnds = [[np.exp(-100), 1E-37, 1E-37, 30/100], [np.exp(1), 1000/30, 1000/30, 1E38]]
-
-        x_fit, _ = curve_fit(fit_func, res[:,0], np.log(res[:,3]), p0=p0, method='trf', bounds=p_bnds, # dogbox
-                                                    #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-                                                    jac='2-point', x_scale='jac', max_nfev=len(p0)*1000, loss='huber')
-
-        cmp = np.array([res[:,0], res[:,3], np.exp(fit_func(res[:,0], *x_fit))]).T
-        for entry in cmp:
-            print(*entry)
-
-        x[idx] = [x_fit[0], 1000/np.exp(x_fit[1]), 1000/np.exp(x_fit[2]), 100*np.exp(x_fit[3])]
-
-        #x[idx] = [np.log(x_fit[0]), 1000/x_fit[1], 1000/x_fit[2], 100*x_fit[3]]
+        x[idx] = fit_falloff_parameters(res[:,0], res[:,3])
 
     else:
         # only valid initial guesses
@@ -782,29 +864,7 @@ def fit_Troe(rates, T, M, x0=[], coefNames=default_Troe_coefNames, bnds=[], scip
 
         # Fit falloff
         idx = alter_idx['falloff_parameters']
-        fit_func = fit_ln_Fcent_decorator(res[:,1])
-        fit_func_jac = fit_ln_Fcent_decorator(res[:,1], jac=True)
-        p0 = [0.6, np.log(1000/200), np.log(1000/600), np.log(1200/100)]
-        p_bnds = [[-10, np.log(1E-37), np.log(1E-37), np.log(30/100)], 
-                  [1, np.log(1000/30), np.log(1000/30), np.log(1E38)]]
-
-        #p0 = [np.exp(0.6), 1000/200, 1000/600, 1200/100]
-        #p_bnds = [[np.exp(-100), 1E-37, 1E-37, 30/100], [np.exp(1), 1000/30, 1000/30, 1E38]]
-
-        with warnings.catch_warnings():
-            warnings.simplefilter('ignore', OptimizeWarning)
-            x_fit, _ = curve_fit(fit_func, res[:,0], np.log(res[:,1]), p0=p0, method='trf', bounds=p_bnds, # dogbox
-                                                        #jac=fit_func_jac, x_scale='jac', max_nfev=len(p0)*1000)
-                                                        jac='2-point', x_scale='jac', max_nfev=len(p0)*1000, loss='huber')
-        
-        #cmp = np.array([res[:,0], res[:,1], fit_func(res[:,0], *x_fit)]).T
-        #for entry in cmp:
-        #    print(*entry)
-        #print('')
-
-        x[idx] = [x_fit[0], 1000/np.exp(x_fit[1]), 1000/np.exp(x_fit[2]), 100*np.exp(x_fit[3])]
-
-        #x[idx] = [np.log(x_fit[0]), 1000/x_fit[1], 1000/x_fit[2], 100*x_fit[3]]
+        x[idx] = fit_falloff_parameters(res[:,0], res[:,1]) #, x0=x0[idx])
 
         #Fcent = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
         #fit_func = lambda M, x: fit_const_T_decorator(ln_k[idx], T[idx])(M, [ln_k_0[idx], ln_k_inf[idx], Fcent])
