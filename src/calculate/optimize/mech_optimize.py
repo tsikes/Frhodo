@@ -376,6 +376,7 @@ class Multithread_Optimize:
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
                 rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], HPL_LPL_defined=False, scipy_curvefit=False)
+                print(rxn_coef['coef_x0'])
 
                 rxn_coef['coefIdx'].extend(range(0, 4)) # extend to include falloff coefficients
                 rxn_coef['coefName'].extend(range(0, 4)) # extend to include falloff coefficients
