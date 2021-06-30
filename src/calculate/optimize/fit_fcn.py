@@ -172,14 +172,14 @@ def calculate_residuals(args_list):
     else:
         t_unc_OoM = np.mean(OoM(var['t_unc']))  # Do at higher level in code? (computationally efficient)
         # calculate time adjust with mse (loss_alpha = 2, loss_c =1)                                                                         
-        time_adj_decorator = lambda t_adjust: time_adjust_func(shock['time_offset'], t_adjust*10**t_unc_OoM, 
+        time_adj_decorator = lambda t_adjust: time_adjust_func(shock['opt_time_offset'], t_adjust*10**t_unc_OoM, 
                 ind_var, obs_sim, obs_exp[:,0], obs_exp[:,1], weights, obs_bounds, scale=var['scale'], 
                 DoF=len(coef_opt), opt_type=var['obj_fcn_type'])
         
         res = minimize_scalar(time_adj_decorator, bounds=var['t_unc']/10**t_unc_OoM, method='bounded')
         t_unc = res.x*10**t_unc_OoM
     
-    output = time_adjust_func(shock['time_offset'], t_unc, ind_var, obs_sim, obs_exp[:,0], obs_exp[:,1], 
+    output = time_adjust_func(shock['opt_time_offset'], t_unc, ind_var, obs_sim, obs_exp[:,0], obs_exp[:,1], 
                               weights, obs_bounds, loss_alpha=var['loss_alpha'], loss_c=var['loss_c'], 
                               scale=var['scale'], DoF=len(coef_opt), opt_type=var['obj_fcn_type'], 
                               verbose=True)  
@@ -267,7 +267,7 @@ class Fit_Fun:
         display_ind_var = None
         display_observable = None
                                                                              
-        if self.multiprocessing:
+        if self.multiprocessing and len(self.shocks2run) > 1:
             args_list = ((var_dict, self.coef_opt, x, shock) for shock in self.shocks2run)
             calc_resid_outputs = self.pool.map(calculate_residuals, args_list)
             for calc_resid_output, shock in zip(calc_resid_outputs, self.shocks2run):
@@ -362,12 +362,12 @@ class Fit_Fun:
             rxn_rates = all_rates[i:i+len(T)]
             if len(coeffs) == 0:
                 coeffs = fit_coeffs(rxn_rates, T, P, X, rxnIdx, rxn_coef['key'], rxn_coef['coefName'], 
-                                    coef_x0, coef_bnds, self.mech)
+                                    coef_x0, coef_bnds, self.mech, self.pool)
                 if coeffs is None:
                     return
             else:
                 coeffs_append = fit_coeffs(rxn_rates, T, P, X, rxnIdx, rxn_coef['key'], rxn_coef['coefName'], 
-                                           coef_x0, coef_bnds, self.mech)
+                                           coef_x0, coef_bnds, self.mech, self.pool)
                 if coeffs_append is None:
                     return
                 coeffs = np.append(coeffs, coeffs_append)

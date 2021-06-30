@@ -57,8 +57,9 @@ class Worker(QRunnable):
         self.s = np.divide(rates(self.rxn_coef_opt, mech), self.rxn_rate_opt['x0']) # this initializes from current GUI settings
 
         # Correct initial rate guesses if outside bounds
-        np.putmask(self.s, self.s < lb, lb*1.01)
-        np.putmask(self.s, self.s > ub, ub*0.99)
+        self.s = np.clip(self.s, lb, ub)
+        #np.putmask(self.s, self.s < lb, lb*1.01)
+        #np.putmask(self.s, self.s > ub, ub*0.99)
 
     def trim_shocks(self): # trim shocks from zero weighted data
         for n, shock in enumerate(self.shocks2run):
@@ -72,7 +73,7 @@ class Worker(QRunnable):
                 shock['abs_uncertainties_trim'] = shock['abs_uncertainties'][exp_bounds,:]
     
     def optimize_coeffs(self, debug=False):
-        debug = True  # shows error message in command window. Does not close program
+        debug = False  # shows error message in command window. Does not close program
         parent = self.parent
         pool = mp.Pool(processes=parent.max_processors,
                        initializer=initialize_parallel_worker,

@@ -244,7 +244,7 @@ class Path:
         
         return self.parent.path[var_name]
     
-    def optimized_mech(self):
+    def optimized_mech(self, file_out='opt_mech'):
         parent = self.parent
         
         mech_name = parent.path['mech'].stem
@@ -260,10 +260,15 @@ class Path:
             if len(num_found) > 0:
                 num.append(*[int(num) for num in num_found])
         
-        file = '{:s}{:.0f}.mech'.format(mech_name, np.max(num)+1)
-        parent.path['Optimized_Mech.mech'] = parent.path['mech_main'] / file
+        opt_mech_file = '{:s}{:.0f}.mech'.format(mech_name, np.max(num)+1)
+        recast_mech_file = opt_mech_file.replace('Opt', 'PreOpt')
+        parent.path['Optimized_Mech.mech'] = parent.path['mech_main'] / opt_mech_file
+        parent.path['Optimized_Mech_recast.mech'] = parent.path['mech_main'] / recast_mech_file
         
-        return parent.path['Optimized_Mech.mech']
+        if file_out == 'opt_mech':
+            return parent.path['Optimized_Mech.mech']
+        elif file_out == 'recast_mech':
+            return parent.path['Optimized_Mech_recast.mech']
     
     def load_dir_file(self, file_path):
         parent = self.parent
@@ -589,6 +594,7 @@ class series:
                 'T5': np.nan, 'P5': np.nan,
                 'T_reactor': np.nan, 'P_reactor': np.nan,
                 'time_offset': parent.time_offset_box.value(),
+                'opt_time_offset': parent.time_offset_box.value(),
                 'Sample_Rate': np.nan,
                 
                 # Weight parameters
@@ -811,6 +817,10 @@ class series:
         elif key == 'time_offset':
             for shock in self.shock[self.idx]:
                 shock[key] = val
+
+                # only updated if optimize isn't running so it doesn't interfere with optimization
+                if not parent.optimize_running: 
+                    shock['opt_time_offset'] = val
                 
         elif key == 'zone':
             for shock in self.shock[self.idx]:

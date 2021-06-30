@@ -14,7 +14,7 @@ from scipy import stats
 from calculate.optimize.optimize_worker import Worker
 from calculate.optimize.fit_fcn import update_mech_coef_opt
 from calculate.optimize.misc_fcns import rates, set_bnds
-from calculate.optimize.fit_coeffs import fit_Troe
+from calculate.optimize.fit_coeffs import Troe
 
 Ru = ct.gas_constant
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -25,6 +25,7 @@ class Multithread_Optimize:
 
         # Initialize Threads
         parent.optimize_running = False
+        parent.multiprocessing = True
         # parent.threadpool = QThreadPool()
         # parent.threadpool.setMaxThreadCount(2) # Sets thread count to 1 (1 for gui - this is implicit, 1 for calc)
         # log_txt = 'Multithreading with maximum {:d} threads\n'.format(parent.threadpool.maxThreadCount())
@@ -43,6 +44,8 @@ class Multithread_Optimize:
 
         self.last_plot_timer = 0.0
         self.time_between_plots = 0.0  # maximum update rate, updated based on time to plot
+
+        parent.multiprocessing = parent.multiprocessing_box.isChecked()
 
         ## Check fit_coeffs
         #from optimize.fit_coeffs import debug
@@ -86,6 +89,9 @@ class Multithread_Optimize:
         weight_fcn = parent.series.weights
         unc_fcn = parent.series.uncertainties
         for shock in self.shocks2run:      # TODO NEED TO UPDATE THIS FOR UNCERTAINTIES AND WEIGHTS
+            # update opt_time_offset if it was changed while a prior optimization was running
+            shock['opt_time_offset'] = shock['time_offset']
+            
             # if weight variables aren't set, update
             if opt_options['obj_fcn']['type'] == 'Residual':
                 weight_var = [shock[key] for key in ['weight_max', 'weight_min', 'weight_shift', 'weight_k']]
@@ -108,8 +114,6 @@ class Multithread_Optimize:
         self._initialize_opt()
         self._update_gas()
         
-        parent.multiprocessing = parent.multiprocessing_box.isChecked()
-        
         parent.update_user_settings()
         # parent.set_weights()
         
@@ -122,8 +126,6 @@ class Multithread_Optimize:
             # if cpu_count > 1: # leave open processor
                 # cpu_count -= 1
             parent.max_processors = np.min([len(self.shocks2run), cpu_count])
-            if parent.max_processors == 1:      # if only 1 shock, turn multiprocessing off
-                parent.multiprocessing = False
             
             log_str = 'Number of processors: {:d}'.format(parent.max_processors)
             parent.log.append(log_str, alert=False)
@@ -327,7 +329,8 @@ class Multithread_Optimize:
         return rxn_rate_opt
 
     def _update_gas(self): # TODO: What happens if a second optimization is run?
-        mech = self.parent.mech
+        parent = self.parent
+        mech = parent.mech
         reset_mech = mech.reset_mech
         coef_opt = self.coef_opt
 
@@ -359,8 +362,9 @@ class Multithread_Optimize:
                 ub = rxn_coef['coef_bnds']['upper']
                 if rxn.falloff.type == 'SRI':   
                     rxns_changed.append(rxn_coef['rxnIdx'])
-                    rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
-                                                  bnds=[lb, ub], scipy_curvefit=False)
+                    Troe_parameters = Troe(rates, T, M, x0=rxn_coef['coef_x0'], coefNames=['A', 'T3', 'T1', 'T2'], 
+                                           bnds=[lb, ub], scipy_curvefit=False, HPL_LPL_defined=True)
+                    rxn_coef['coef_x0'] = Troe_parameters.fit()
 
                 # comment below, only for testing fit
                 #print(rxn_coef['coef_x0'])
@@ -375,8 +379,9 @@ class Multithread_Optimize:
 
                 lb = rxn_coef['coef_bnds']['lower']
                 ub = rxn_coef['coef_bnds']['upper']
-                rxn_coef['coef_x0'] = fit_Troe(rates, T, M, x0=rxn_coef['coef_x0'], bnds=[lb, ub], HPL_LPL_defined=False, scipy_curvefit=False)
-                print(rxn_coef['coef_x0'])
+                Troe_parameters = Troe(rates, T, M, x0=rxn_coef['coef_x0'],
+                                       bnds=[lb, ub], HPL_LPL_defined=False, scipy_curvefit=False)
+                rxn_coef['coef_x0'] = Troe_parameters.fit()
 
                 rxn_coef['coefIdx'].extend(range(0, 4)) # extend to include falloff coefficients
                 rxn_coef['coefName'].extend(range(0, 4)) # extend to include falloff coefficients
@@ -421,6 +426,8 @@ class Multithread_Optimize:
                 bnds['coeffs_bnds'].append(coeffs_bnds)
 
             mech.set_mechanism(reset_mech, bnds=bnds)
+
+            parent.save.chemkin_format(mech.gas, parent.path_set.optimized_mech(file_out='recast_mech'))
 
         if len(rxns_changed) > 0:
             self._initialize_opt()
