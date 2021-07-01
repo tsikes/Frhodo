@@ -39,12 +39,14 @@ def weighted_quantile(values, quantiles, weights=None, values_sorted=False, old_
         with numpy.percentile.
     :return: numpy.array with computed quantiles.
     """
-    nonNan_idx = np.where(values!=np.nan)
-    values = np.array(values[nonNan_idx])
+    finite_idx = np.where(np.isfinite(values))
+    values = np.array(values)[finite_idx]
     quantiles = np.array(quantiles)
     if weights is None or len(weights) == 0:
-        weights = np.ones(len(values))
-    weights = np.array(weights[nonNan_idx])
+        weights = np.ones_like(values)
+    else:
+        weights = np.array(weights)[finite_idx]
+
     assert np.all(quantiles >= 0) and np.all(quantiles <= 1), \
         'quantiles should be in [0, 1]'
 
@@ -59,9 +61,10 @@ def weighted_quantile(values, quantiles, weights=None, values_sorted=False, old_
         weighted_quantiles /= weighted_quantiles[-1]
     else:
         weighted_quantiles /= np.sum(weights)
+
     return np.interp(quantiles, weighted_quantiles, values)
 
-def outlier(x, a=2, c=1, weights=[], max_iter=25, percentile=0.25):
+def outlier(x, c=1, weights=[], max_iter=25, percentile=0.25):
     def diff(x_outlier):
         if len(x_outlier) < 2: 
             return 1
@@ -71,25 +74,23 @@ def outlier(x, a=2, c=1, weights=[], max_iter=25, percentile=0.25):
     x = np.abs(x.copy())
     percentiles = [percentile, 1-percentile]
     x_outlier = []
-    if a != 2: # define outlier with 1.5 IQR rule
-        for n in range(max_iter):
-            if diff(x_outlier) == 0:   # iterate until res_outlier is the same as prior iteration
-                break
+    # define outlier with 1.5 IQR rule
+    for n in range(max_iter):
+        if diff(x_outlier) == 0:   # iterate until res_outlier is the same as prior iteration
+            break
                 
-            if len(x_outlier) > 0:
-                x = x[x < x_outlier[-1]] 
+        if len(x_outlier) > 0:
+            x = x[x < x_outlier[-1]] 
             
-            [q1, q3] = weighted_quantile(x, percentiles, weights=weights)
-            iqr = q3 - q1       # interquartile range      
+        [q1, q3] = weighted_quantile(x, percentiles, weights=weights)
+        iqr = q3 - q1       # interquartile range      
             
-            if len(x_outlier) == 2:
-                del x_outlier[0]
+        if len(x_outlier) == 2:
+            del x_outlier[0]
             
-            x_outlier.append(q3 + iqr*1.5)
+        x_outlier.append(q3 + iqr*1.5)
         
-        x_outlier = x_outlier[-1]
-    else:
-        x_outlier = 1
+    x_outlier = x_outlier[-1]
 
     return c*x_outlier
     

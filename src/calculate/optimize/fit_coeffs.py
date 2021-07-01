@@ -19,6 +19,7 @@ Ru = ct.gas_constant
 
 min_pos_system_value = (np.finfo(float).tiny*(1E20))**(1/2)
 max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/2)
+min_ln_val = np.log(min_pos_system_value)
 max_ln_val = np.log(max_pos_system_value)
 
 default_arrhenius_coefNames = ['activation_energy', 'pre_exponential_factor', 'temperature_exponent']
@@ -187,7 +188,7 @@ class falloff_parameters:   # based on ln_Fcent
         else:
             xtol_rel = 1E-8
             ftol_rel = 1E-4
-            initial_step = 1E-3
+            initial_step = 1E-4
 
             self.opt = opt = nlopt.opt(nlopt.AUGLAG, 4)
 
@@ -260,10 +261,24 @@ class falloff_parameters:   # based on ln_Fcent
     def function(self, T, *x):
         [A, T3, T1, T2] = self.convert(x, 'opt2base')
 
-        Fcent_fit = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)
+        Fcent_fit = self.Fcent_calc(T, A, T3, T1, T2)
         Fcent_fit[Fcent_fit <= 0.0] = 10000
 
         return Fcent_fit
+
+    def Fcent_calc(self, T, A, T3, T1, T2):
+        exp_T3 = np.zeros_like(T)
+        exp_T3[:] = np.exp(-T/T3)
+
+        exp_T1 = np.zeros_like(T)
+        exp_T1[:] = np.exp(-T/T1)
+
+        T2_T = T2/T
+        exp_T2 = np.where(T2_T <= max_ln_val, np.exp(-T2_T), 0.0)
+
+        Fcent = (1-A)*exp_T3 + A*exp_T1 + exp_T2
+
+        return Fcent
 
     def jacobian(self, T, *x):
         [A, B, C, D] = x
@@ -368,7 +383,7 @@ class falloff_parameters:   # based on ln_Fcent
         if len(T) == 3:
             print(T)
 
-        Fcent = (1-A)*np.exp(-T/T3) + A*np.exp(-T/T1) + np.exp(-T2/T)   #TODO: OVERFLOW WARNING HERE
+        Fcent = self.Fcent_calc(T, A, T3, T1, T2)   #TODO: OVERFLOW WARNING HERE
         con = np.min(Fcent_min - Fcent)
 
         if grad.size > 0:
@@ -600,9 +615,6 @@ class Troe:
         ln_k_calc = np.log(k_inf*P_r/(1 + P_r)) + ln_F
 
         return ln_k_calc
-
-
-
 
 
 def fit_generic(rates, T, P, X, rxnIdx, coefKeys, coefNames, mech, x0, bnds, mpPool):    

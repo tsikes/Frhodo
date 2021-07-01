@@ -16,7 +16,6 @@ from calculate.optimize.fit_coeffs import fit_coeffs
 from calculate.optimize.CheKiPEUQ_from_Frhodo import CheKiPEUQ_Frhodo_interface
 
 mpMech = {}
-
 def initialize_parallel_worker(mech_dict, species_dict, coeffs, coeffs_bnds, rate_bnds):
     mpMech['obj'] = mech = Chemical_Mechanism()
 
@@ -30,6 +29,9 @@ def initialize_parallel_worker(mech_dict, species_dict, coeffs, coeffs_bnds, rat
     mech.rate_bnds = deepcopy(rate_bnds)
 
 def rescale_loss_fcn(x, loss, x_outlier=None, weights=[]):
+    x = x.copy()
+    weights = weights.copy()
+
     if x_outlier is not None:
         trimmed_indices = np.argwhere(abs(x) < x_outlier)
         x = x[trimmed_indices]
@@ -41,11 +43,18 @@ def rescale_loss_fcn(x, loss, x_outlier=None, weights=[]):
     if len(weights) == len(x):
         x_q1, x_q3 = weighted_quantile(x, [0.0, 1.0], weights=weights)
         loss_q1, loss_q3 = weighted_quantile(loss_trimmed, [0.0, 1.0], weights=weights)
+
     else:
         x_q1, x_q3 = x.min(), x.max()
         loss_q1, loss_q3 = loss_trimmed.min(), loss_trimmed.max()
     
-    return (x_q3 - x_q1)/(loss_q3 - loss_q1)*(loss - loss_q1) + x_q1
+    if x_q1 != x_q3 and loss_q1 != loss_q3: # prevent divide by zero if values end up the same
+        loss_scaled = (x_q3 - x_q1)/(loss_q3 - loss_q1)*(loss - loss_q1) + x_q1
+
+    else:
+        loss_scaled = loss
+
+    return loss_scaled
 
 def update_mech_coef_opt(mech, coef_opt, x):
     mech_changed = False
@@ -100,7 +109,7 @@ def calculate_residuals(args_list):
                 obs_sim_interp = np.log10(np.abs(obs_sim_interp[ind])).squeeze()
                 obs_bounds = np.log10(np.abs(obs_bounds[ind])).squeeze()    
         
-        resid_outlier = outlier(resid, a=loss_alpha, c=loss_c, weights=weights)
+        resid_outlier = outlier(resid, c=loss_c, weights=weights)
         loss = generalized_loss_fcn(resid, a=loss_alpha, c=resid_outlier)
         loss = rescale_loss_fcn(np.abs(resid), loss, resid_outlier, weights)
 
@@ -266,7 +275,7 @@ class Fit_Fun:
         
         display_ind_var = None
         display_observable = None
-                                                                             
+                                                                          
         if self.multiprocessing and len(self.shocks2run) > 1:
             args_list = ((var_dict, self.coef_opt, x, shock) for shock in self.shocks2run)
             calc_resid_outputs = self.pool.map(calculate_residuals, args_list)
@@ -294,7 +303,7 @@ class Fit_Fun:
             loss_exp = loss_resid
         else:                   # optimizing multiple experiments
             loss_min = loss_resid.min()
-            loss_outlier = outlier(loss_resid, a=self.opt_settings['loss_alpha'], c=self.opt_settings['loss_c'])
+            loss_outlier = outlier(loss_resid, c=self.opt_settings['loss_c'])
             loss_exp = generalized_loss_fcn(loss_resid, mu=loss_min, a=self.opt_settings['loss_alpha'], c=loss_outlier)
             loss_exp = rescale_loss_fcn(loss_resid, loss_exp)           
         
@@ -318,7 +327,7 @@ class Fit_Fun:
                                    'bayesian_weights': Bayesian_weights, 'iteration_num': self.i}
             
             obj_fcn = self.CheKiPEUQ_Frhodo_interface.evaluate(CheKiPEUQ_eval_dict)
-           
+
         # For updating
         self.i += 1
         if not optimizing or self.i % 1 == 0:#5 == 0: # updates plot every 5
@@ -345,7 +354,7 @@ class Fit_Fun:
                       'ind_var': display_ind_var, 'observable': display_observable}
             
             self.signals.update.emit(update)
-                
+
         if optimizing:
             return obj_fcn
         else:

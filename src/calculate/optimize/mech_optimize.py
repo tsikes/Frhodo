@@ -122,12 +122,12 @@ class Multithread_Optimize:
         
         # Create mechs and duplicate mech variables
         if parent.multiprocessing == True:
-            cpu_count = mp.cpu_count()
+            cpu_count = mp.cpu_count() + 2
             # if cpu_count > 1: # leave open processor
                 # cpu_count -= 1
             parent.max_processors = np.min([len(self.shocks2run), cpu_count])
             
-            log_str = 'Number of processors: {:d}'.format(parent.max_processors)
+            log_str = 'Number of processes: {:d}'.format(parent.max_processors)
             parent.log.append(log_str, alert=False)
         else:
             parent.max_processors = 1
@@ -522,4 +522,6 @@ class Multithread_Optimize:
             self.parent.abort = True
             if self.HoF:
                 self.update(self.HoF, writeLog=False)
+        
+        self.parent.optimize_running = False
             # self.parent.update_progress(100, '00:00:00') # This turns off the progress bar

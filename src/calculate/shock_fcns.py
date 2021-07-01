@@ -97,6 +97,46 @@ class ReactorOde(object):
         
         return ydot
 
+    def jacobian(self, t, y):   # Might increase speed to include this, not currently set up
+        '''
+        ODE function, y' = f(t,y)
+        State vector is [z, A, rho, v, T, tlab, Y_1, Y_2, ... Y_K]
+                         0  1   2   3  4   5    6 ...
+        '''
+        z, A, rho, v, T, tlab = y[:6]
+        if np.isnan(T) or T <= 0:   # return error to stop solver
+            raise Exception('ODE Error: Temperature is invalid')
+        if np.isnan(rho) or rho <= 0:
+            raise Exception('ODE Error: Density is invalid')
+            
+        self.gas.set_unnormalized_mass_fractions(y[6:])
+        self.gas.TD = T, rho
+        cp = self.gas.cp_mass
+        Wmix = self.gas.mean_molecular_weight
+        hk = self.gas.partial_molar_enthalpies
+        wdot = self.gas.net_production_rates
+
+        if self.delta_dA:
+            xi = max(z / self.L, 1e-10)
+            dA_dt = v * self.As*self.n/self.L * xi**(self.n-1.0)/(1.0-xi**self.n)**2.0
+        else:
+            dA_dt = 0.0
+        
+        beta = v**2 * (1.0/(cp*T) - Wmix / (Ru * T))
+
+        jac = np.zeros(self.N, self.N)
+        jac[0] = v # dz/dt
+        jac[1] = dA_dt # dA/dt
+        jac[2] = 1/(1+beta) * (sum((hk/(cp*T) - Wmix) * wdot) - rho*beta/A * jac[1]) # drho/dt
+        jac[3] = -v * (jac[2]/rho + jac[1]/A) # dv/dt
+        jac[4] = -(np.dot(wdot, hk)/rho + v*jac[3]) / cp # dT/dt
+        jac[5] = 1 # dt_shock/dt_lab (converted below)
+        jac[6:] = wdot * self.Wk / rho # dYk/dt
+        
+        jac = jac*rho*A/(self.rhoI*self.A1) # convert from d/dt to d/dt_lab
+        
+        return jac
+
 
 # compute the density gradient from the solution
 def drhodz(states, L=0.1, As=0.2, A1=0.2, area_change=False):

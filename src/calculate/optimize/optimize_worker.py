@@ -57,7 +57,7 @@ class Worker(QRunnable):
         self.s = np.divide(rates(self.rxn_coef_opt, mech), self.rxn_rate_opt['x0']) # this initializes from current GUI settings
 
         # Correct initial rate guesses if outside bounds
-        self.s = np.clip(self.s, lb, ub)
+        self.s = np.clip(self.s, lb*(1+1E-6), ub*(1-1E-6))
         #np.putmask(self.s, self.s < lb, lb*1.01)
         #np.putmask(self.s, self.s > ub, ub*0.99)
 

@@ -8,7 +8,10 @@ from copy import deepcopy
 from dateutil.parser import parse
 from scipy import integrate      # used to integrate weights numerically
 from qtpy import QtCore
-            
+
+min_pos_system_value = (np.finfo(float).tiny*(1E20))**(1/2)
+max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/2)
+
 class Path:
     def __init__(self, parent, path):
         self.parent = parent
@@ -516,6 +519,11 @@ def double_sigmoid(x, A, k, x0):    # A = extrema, k = inverse growth rate, x0 =
         eval[x >= 0] = 1/(1 + pos_val_f)
         neg_val_f = np.exp(x[x < 0])
         eval[x < 0] = neg_val_f/(1 + neg_val_f)
+
+        # clip so they can be multiplied
+        eval[eval > 0] = np.clip(eval[eval > 0], min_pos_system_value, max_pos_system_value)
+        eval[eval < 0] = np.clip(eval[eval < 0], -max_pos_system_value, -min_pos_system_value)
+
         return eval
         
     def b_eval(x, k, x0):
@@ -538,8 +546,12 @@ def double_sigmoid(x, A, k, x0):    # A = extrema, k = inverse growth rate, x0 =
         a = (A[2] - A[0])*sig(b[0]) + A[0]          # a is the changing minimum
     else:
         a = (A[2] - A[0])*sig(np.mean(b,0)) + A[0]  # a is the changing minimum
-        
-    return (A[1] - a)*sig(b[0])*sig(-b[1]) + a
+    
+    #print((A[1] - a), sig(b[0]), sig(-b[1]), a)
+
+    res = (A[1] - a)*sig(b[0])*sig(-b[1]) + a
+
+    return res
 
 class series:
     def __init__(self, parent):

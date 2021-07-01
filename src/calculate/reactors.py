@@ -257,12 +257,16 @@ class Reactor:
             t_all = np.sort(np.unique(np.concatenate((t_sim, var['t_lab_save'])))) # combine t_all and t_save, sort, only unique values
         
         states = ct.SolutionArray(gas, extra=['t', 't_shock', 'z', 'A', 'vel', 'drhodz_tot', 'drhodz', 'perc_drhodz'])
-        for i, t in enumerate(t_all):   # calculate from solution
-            y = sol.sol(t)  
-            z, A, rho, v, T, t_shock = y[0:6]
-            Y = y[6:]
+        if self.ODE_success:
+            for i, t in enumerate(t_all):   # calculate from solution
+                y = sol.sol(t)  
+                z, A, rho, v, T, t_shock = y[0:6]
+                Y = y[6:]
 
-            states.append(TDY=(T, rho, Y), t=t, t_shock=t_shock, z=z, A=A, vel=v, drhodz_tot=np.nan, drhodz=np.nan, perc_drhodz=np.nan)
+                states.append(TDY=(T, rho, Y), t=t, t_shock=t_shock, z=z, A=A, vel=v, drhodz_tot=np.nan, drhodz=np.nan, perc_drhodz=np.nan)
+        else:
+            states.append(TDY=(gas.T, gas.density, gas.Y), t=0.0, t_shock=0.0, z=0.0, A=var['A1'], vel=var['u_reac'], 
+                          drhodz_tot=np.nan, drhodz=np.nan, perc_drhodz=np.nan)
         
         reactor_vars = ['t_lab', 't_shock', 'z', 'A', 'vel', 'T', 'P', 'h_tot', 'h', 
                         's_tot', 's', 'rho', 'drhodz_tot', 'drhodz', 'perc_drhodz',
