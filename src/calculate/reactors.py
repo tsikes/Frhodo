@@ -2,7 +2,7 @@
 # and licensed under BSD-3-Clause. See License.txt in the top-level 
 # directory for license and copyright information.
 
-import os, io, stat, contextlib, pathlib, time
+import sys, os, io, stat, contextlib, pathlib, time
 from copy import deepcopy
 import cantera as ct
 from cantera import interrupts, cti2yaml#, ck2yaml, ctml2yaml
@@ -285,7 +285,7 @@ class Reactor:
      
     def zero_d_ideal_gas_reactor(self, gas, reactor, details, t_end, **kwargs):
         # set default values
-        var = {'sim_int_f': 1, 'observable': {'main': 'Concentration', 'sub': 0},
+        var = {'observable': {'main': 'Concentration', 'sub': 0},
                't_lab_save': None, 'rtol': 1E-4, 'atol': 1E-7}
         
         var.update(kwargs)
@@ -306,17 +306,90 @@ class Reactor:
         else:
             t_all = np.sort(np.unique(np.concatenate(([t_end], var['t_lab_save'])))) # combine t_end and t_save, sort, only unique values
         
+        self.ODE_success = True
+        details['success'] = True
+
         states = ct.SolutionArray(gas, extra=['t'])
         states.append(reactor.thermo.state, t = 0.0)
         for t in t_all:
+            if not self.ODE_success:
+                break
             while sim.time < t:     # integrator step until time > target time
-                sim.step()
-                if sim.time > t:    # force interpolation to target time
-                    sim.advance(t)
-                states.append(reactor.thermo.state, t=sim.time)
+                try:
+                    sim.step()
+                    if sim.time > t:    # force interpolation to target time
+                        sim.advance(t)
+                    states.append(reactor.thermo.state, t=sim.time)
+                except:
+                    self.ODE_success = False
+                    details['success'] = False
+                    explanation = '\nCheck for: Fast rates or bad thermo data'
+                    checkRxns = self.checkRxnRates(gas)
+                    if len(checkRxns) > 0:
+                        explanation += '\nSuggested Reactions: ' + ', '.join([str(x) for x in checkRxns])
+                    details['message'] = '\nODE Error: {:s}\n{:s}\n'.format(str(sys.exc_info()[1]), explanation)
+                    break
         
-        self.ODE_success = True         # TODO: NEED REAL ERROR CHECKING OF REACTOR SUCCESS
+        reactor_vars = ['t_lab', 'T', 'P', 'h_tot', 'h', 's_tot', 's', 'rho', 
+                        'Y', 'X', 'conc', 'wdot', 'wdotfor', 'wdotrev', 'HRR_tot', 'HRR',
+                        'delta_h', 'delta_s', 'eq_con', 'rate_con', 'rate_con_rev', 
+                        'net_ROP', 'for_ROP', 'rev_ROP']
+
+        num = {'reac': np.sum(gas.reactant_stoich_coeffs(), axis=0),
+               'prod': np.sum(gas.product_stoich_coeffs(), axis=0),
+               'rxns': gas.n_reactions}
+        
+        SIM = Simulation_Result(num, states, reactor_vars)
+        SIM.finalize(self.ODE_success, ind_var, var['observable'], units='CGS')
+
+        return SIM, details
+
+    def plug_flow_reactor(self, gas, details, length, area, u_0, **kwargs):
+        # set default values
+        var = {'observable': {'main': 'Concentration', 'sub': 0},
+               't_lab_save': None, 'rtol': 1E-4, 'atol': 1E-7}
+        
+        var.update(kwargs)
+        
+        # Modify reactor if necessary for frozen composition and isothermal
+        reactor.energy_enabled = var['solve_energy']
+        reactor.chemistry_enabled = not var['frozen_comp']
+        
+        # Create Sim
+        sim = ct.ReactorNet([reactor])
+        sim.atol = var['atol']
+        sim.rtol = var['rtol']
+        
+        # set up times and observables
+        ind_var = 't_lab'       # INDEPENDENT VARIABLE CURRENTLY HARDCODED FOR t_lab
+        if var['t_lab_save'] is None:
+            t_all = [t_end]
+        else:
+            t_all = np.sort(np.unique(np.concatenate(([t_end], var['t_lab_save'])))) # combine t_end and t_save, sort, only unique values
+        
+        self.ODE_success = True
         details['success'] = True
+
+        states = ct.SolutionArray(gas, extra=['t'])
+        states.append(reactor.thermo.state, t = 0.0)
+        for t in t_all:
+            if not self.ODE_success:
+                break
+            while sim.time < t:     # integrator step until time > target time
+                try:
+                    sim.step()
+                    if sim.time > t:    # force interpolation to target time
+                        sim.advance(t)
+                    states.append(reactor.thermo.state, t=sim.time)
+                except:
+                    self.ODE_success = False
+                    details['success'] = False
+                    explanation = '\nCheck for: Fast rates or bad thermo data'
+                    checkRxns = self.checkRxnRates(gas)
+                    if len(checkRxns) > 0:
+                        explanation += '\nSuggested Reactions: ' + ', '.join([str(x) for x in checkRxns])
+                    details['message'] = '\nODE Error: {:s}\n{:s}\n'.format(str(sys.exc_info()[1]), explanation)
+                    break
         
         reactor_vars = ['t_lab', 'T', 'P', 'h_tot', 'h', 's_tot', 's', 'rho', 
                         'Y', 'X', 'conc', 'wdot', 'wdotfor', 'wdotrev', 'HRR_tot', 'HRR',

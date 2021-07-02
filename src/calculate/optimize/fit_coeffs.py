@@ -446,7 +446,7 @@ class Troe:
         self.pool = mpPool
 
         if self.HPL_LPL_defined:
-            self.loss_fcn_par = [2, 1]
+            self.loss_fcn_par = [2, 1]  # SSE
         else:
             self.loss_fcn_par = [1, 1]  # huber-like
 
