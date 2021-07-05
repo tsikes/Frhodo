@@ -873,6 +873,11 @@ class Uncertainty_Parameters_Table(QtCore.QObject):
         if sender in [parent.unc_shading_box, parent.wavelet_levels_box]:
             parent.plot.signal.unc_shading = parent.unc_shading_box.currentText()
             parent.plot.signal.wavelet_levels = parent.wavelet_levels_box.value()
+            if parent.plot.signal.unc_shading != 'Smoothed Signal':
+                parent.wavelet_levels_box.setEnabled(False)
+            else:
+                parent.wavelet_levels_box.setEnabled(True)
+
             parent.plot.signal.update_uncertainty_shading()
 
         if sender in self.boxes['unc_cutoff']:
