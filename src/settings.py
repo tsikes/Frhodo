@@ -7,7 +7,11 @@ import os, sys, platform, pathlib, shutil, configparser, re, csv
 from copy import deepcopy
 from dateutil.parser import parse
 from scipy import integrate      # used to integrate weights numerically
+from scipy.signal import savgol_filter
 from qtpy import QtCore
+
+from calculate.convert_units import OoM, RoundToSigFigs
+from calculate.smooth_data import dual_tree_complex_wavelet_filter
 
 min_pos_system_value = (np.finfo(float).tiny*(1E20))**(1/2)
 max_pos_system_value = (np.finfo(float).max*(1E-20))**(1/2)
@@ -632,8 +636,10 @@ class series:
                 
                 # Data
                 'observable': {'main': '', 'sub': None},
+                'wavelet_lvls': np.nan,                    # number of wavelets for smoothing
                 'raw_data': np.array([]),
                 'exp_data': np.array([]),
+                'exp_data_smoothed': np.array([]),
                 'weights': np.array([]),
                 'normalized_weights': np.array([]),
                 'uncertainties': np.array([]),
@@ -797,7 +803,38 @@ class series:
 
         return unc
 
-    def set(self, key, val=[]):
+    def smoothed_data(self, signal):
+        def calculate_C(signal):
+            finite_signal = np.array(signal)[np.isfinite(signal)] # ignore nan and inf
+            min_signal = finite_signal.min()  
+            max_signal = finite_signal.max()
+                
+            # if zero is within total range, find largest pos or neg range
+            if np.sign(max_signal) != np.sign(min_signal):  
+                processed_signal = [finite_signal[finite_signal>=0], finite_signal[finite_signal<=0]]
+                C = 0
+                for signal in processed_signal:
+                    range = np.abs(signal.max() - signal.min())
+                    if range > C:
+                        C = range
+                        max_signal = signal.max()
+            else:
+                C = np.abs(max_signal-min_signal)
+
+            C *= 10**(OoM(max_signal) + 2)  # scaling factor TODO: + 1 looks loglike, + 2 linear like
+            C = RoundToSigFigs(C, 1)    # round to 1 significant figure
+
+            return C
+
+        lvls = self.shock[self.idx][self.shock_idx]['wavelet_lvls']
+
+        C = calculate_C(signal)
+        signal = np.sign(signal)*np.log10(1 + np.abs(signal/C))      # apply bisymlog prior to smoothing
+        signal = dual_tree_complex_wavelet_filter(signal, lvls=lvls) # smooth transformed data
+
+        return np.sign(signal)*C*(np.power(10, np.abs(signal)) - 1)  # inverse transform back to original scale
+
+    def set(self, key, val=[], **kwargs):
         parent = self.parent
         if key == 'exp_data':
             if parent.load_full_series:
@@ -816,6 +853,19 @@ class series:
                     if shock[key].size == 0:
                         shock['err'].append(key)
         
+        elif key == 'exp_data_smoothed':
+            opt_type = parent.optimization_settings.get('obj_fcn', 'type')
+            shock = self.shock[self.idx][self.shock_idx]
+            lvls = self.parent.plot.signal.wavelet_levels
+
+            if (opt_type != 'Bayesian' or parent.plot.signal.unc_shading != 'Smoothed Signal' 
+                or len(shock['exp_data']) == 0 or shock['wavelet_lvls'] == lvls):
+                return
+            
+            shock['wavelet_lvls'] = lvls
+            shock['exp_data_smoothed'] = shock['exp_data'].copy()
+            shock['exp_data_smoothed'][:,1] = self.smoothed_data(shock['exp_data_smoothed'][:,1])
+
         elif key == 'series_name':          # being called many times when weights changing, don't know why yet
             self.name[self.idx] = val
             for shock in self.shock[self.idx]:

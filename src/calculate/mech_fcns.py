@@ -386,7 +386,7 @@ class Chemical_Mechanism:
                 self.gas.modify_reaction(rxnIdx, rxn)
 
         # Not sure if this is necessary, but it reduces strange behavior in incident shock reactor
-        time.sleep(10E-3)        # TODO: if incident shock reactor is written in C++, this can likely be removed
+        #time.sleep(10E-3)        # TODO: if incident shock reactor is written in C++, this can likely be removed
     
     def rxn2Troe(self, rxnIdx, HPL, LPL, eff={}):
         reactants = self.gas.reaction(rxnIdx).reactants

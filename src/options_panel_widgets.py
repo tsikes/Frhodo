@@ -797,8 +797,9 @@ class Uncertainty_Parameters_Table(QtCore.QObject):
         
         self.create_boxes()
         self.table.itemChanged.connect(self.update)
-        parent.unc_shading_box.stateChanged.connect(self.update)
         parent.unc_type_box.currentTextChanged.connect(self.update)
+        parent.unc_shading_box.currentTextChanged.connect(self.update)
+        parent.wavelet_levels_box.valueChanged.connect(self.update)
     
     def create_boxes(self):
         parent = self.parent()
@@ -869,8 +870,9 @@ class Uncertainty_Parameters_Table(QtCore.QObject):
         if sender is parent.unc_type_box:
             self.switch_unc_type()
 
-        if sender is parent.unc_shading_box:
-            parent.plot.signal.show_unc_shading = parent.unc_shading_box.isChecked()
+        if sender in [parent.unc_shading_box, parent.wavelet_levels_box]:
+            parent.plot.signal.unc_shading = parent.unc_shading_box.currentText()
+            parent.plot.signal.wavelet_levels = parent.wavelet_levels_box.value()
             parent.plot.signal.update_uncertainty_shading()
 
         if sender in self.boxes['unc_cutoff']:

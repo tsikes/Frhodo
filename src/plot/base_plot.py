@@ -24,7 +24,7 @@ import matplotlib as mpl
 #mpl.use("module://mplcairo.qt") # This implements mplcairo, faster/more accurate. Issues with other OSes?
 import numpy as np
 
-from calculate.convert_units import OoM
+from calculate.convert_units import OoM, RoundToSigFigs
 from plot.custom_mplscale import *
 from plot.custom_mpl_ticker_formatter import *
 from timeit import default_timer as timer
@@ -231,12 +231,6 @@ class Base_Plot(QtCore.QObject):
         return data
     
     def _set_scale(self, coord, type, event, update_xylim=False):
-        def RoundToSigFigs(x, p):
-            x = np.asarray(x)
-            x_positive = np.where(np.isfinite(x) & (x != 0), np.abs(x), 10**(p-1))
-            mags = 10 ** (p - 1 - np.floor(np.log10(x_positive)))
-            return np.round(x * mags) / mags
-    
         # find correct axes
         axes = self._find_calling_axes(event)
         # for axes in self.ax:

@@ -20,7 +20,8 @@ class Plot(Base_Plot):
     def __init__(self, parent, widget, mpl_layout):
         super().__init__(parent, widget, mpl_layout)
 
-        self.show_unc_shading = False
+        self.unc_shading = 'Simulation'
+        self.wavelet_levels = 4 # used for smoothing experimental signal with wavelet filter
 
         # Connect Signals
         self.canvas.mpl_connect('resize_event', self._resize_event)
@@ -474,23 +475,45 @@ class Plot(Base_Plot):
         parent = self.parent
         obj_fcn_type = parent.obj_fcn_type_box.currentText()
 
-        t = self.ax[1].item['sim_data'].get_xdata()
         len_exp_data = len(parent.display_shock['exp_data'])
 
         # if any of these occur, remove shading and do not continue
-        if (not self.show_unc_shading or obj_fcn_type != 'Bayesian' 
-            or len(t) == 0 or np.isnan(t).any() or len_exp_data == 0):
-            
+        if self.unc_shading == 'None' or obj_fcn_type != 'Bayesian' or len_exp_data == 0:
             self.ax[1].item['unc_shading'].set_visible(False)
             return
         
-        obs_sim = self.ax[1].item['sim_data'].get_ydata()
-        unc = parent.series.uncertainties(t)
+        smoothed_signal_shading = False
+        if self.unc_shading == 'Smoothed Signal':
+            try:
+                parent.series.set('exp_data_smoothed')
+                smoothed_signal_shading = True
+            except:
+                pass
+
+            if len(parent.display_shock['exp_data_smoothed']) == 0:
+                smoothed_signal_shading = False
+        
+        if smoothed_signal_shading:
+            t = parent.display_shock['exp_data_smoothed'][:,0]
+            if len(t) == 0 or np.isnan(t).any():
+                self.ax[1].item['unc_shading'].set_visible(False)
+                return
+
+            center = parent.display_shock['exp_data_smoothed'][:,1]
+            unc = parent.series.uncertainties(t)
+        else:
+            t = self.ax[1].item['sim_data'].get_xdata()
+            if len(t) == 0 or np.isnan(t).any():
+                self.ax[1].item['unc_shading'].set_visible(False)
+                return
+            
+            center = self.ax[1].item['sim_data'].get_ydata()
+            unc = parent.series.uncertainties(t)
 
         if self.parent.exp_unc.unc_type == '%':
-            abs_unc = [obs_sim/(1+unc), obs_sim*(1+unc)]
+            abs_unc = [center/(1+unc), center*(1+unc)]
         else:
-            abs_unc = [obs_sim - unc, obs_sim + unc]
+            abs_unc = [center - unc, center + unc]
 
         # # this is causing a disappearing unc shading if a bad experiment is selected. Not sure why
         #dummy = self.ax[1].fill_between(t, abs_unc[0], abs_unc[1])
@@ -558,7 +581,8 @@ class Plot(Base_Plot):
         self.ax[1].item['sim_data'].set_xdata(t + time_offset)
         self.ax[1].item['sim_data'].set_ydata(observable)
         
-        self.update_uncertainty_shading()
+        if self.unc_shading == 'Simulation':
+            self.update_uncertainty_shading()
 
         if exp_data.size == 0 and not np.isnan(t).any(): # if exp data doesn't exist rescale
             self.set_xlim(self.ax[1], [t[0], t[-1]])

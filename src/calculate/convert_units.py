@@ -17,6 +17,12 @@ def OoM(x):
     x[x==0] = 1                       # if zero, make OoM 0
     return np.floor(np.log10(np.abs(x)))
 
+def RoundToSigFigs(x, p):
+    x = np.asarray(x)
+    x_positive = np.where(np.isfinite(x) & (x != 0), np.abs(x), 10**(p-1))
+    mags = 10 ** (p - 1 - np.floor(np.log10(x_positive)))
+    return np.round(x * mags) / mags
+
 class Convert_Units:
     def __init__(self, parent):
         self.parent = parent
