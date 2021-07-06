@@ -1170,19 +1170,19 @@ p, li { white-space: pre-wrap; }
               <property name="rowCount">
                <number>10</number>
               </property>
-              <attribute name="horizontalHeaderDefaultSectionSize">
-               <number>50</number>
-              </attribute>
               <attribute name="horizontalHeaderMinimumSectionSize">
                <number>20</number>
+              </attribute>
+              <attribute name="horizontalHeaderDefaultSectionSize">
+               <number>50</number>
               </attribute>
               <attribute name="horizontalHeaderStretchLastSection">
                <bool>false</bool>
               </attribute>
-              <attribute name="verticalHeaderDefaultSectionSize">
+              <attribute name="verticalHeaderMinimumSectionSize">
                <number>22</number>
               </attribute>
-              <attribute name="verticalHeaderMinimumSectionSize">
+              <attribute name="verticalHeaderDefaultSectionSize">
                <number>22</number>
               </attribute>
               <row>
@@ -2217,19 +2217,19 @@ p, li { white-space: pre-wrap; }
                          <property name="selectionMode">
                           <enum>QAbstractItemView::NoSelection</enum>
                          </property>
-                         <attribute name="horizontalHeaderDefaultSectionSize">
-                          <number>30</number>
-                         </attribute>
                          <attribute name="horizontalHeaderMinimumSectionSize">
                           <number>20</number>
+                         </attribute>
+                         <attribute name="horizontalHeaderDefaultSectionSize">
+                          <number>30</number>
                          </attribute>
                          <attribute name="horizontalHeaderStretchLastSection">
                           <bool>true</bool>
                          </attribute>
-                         <attribute name="verticalHeaderDefaultSectionSize">
+                         <attribute name="verticalHeaderMinimumSectionSize">
                           <number>22</number>
                          </attribute>
-                         <attribute name="verticalHeaderMinimumSectionSize">
+                         <attribute name="verticalHeaderDefaultSectionSize">
                           <number>22</number>
                          </attribute>
                          <row>
@@ -2368,10 +2368,10 @@ p, li { white-space: pre-wrap; }
                           <item row="2" column="3">
                            <widget class="QSpinBox" name="wavelet_levels_box">
                             <property name="minimum">
-                             <number>2</number>
+                             <number>1</number>
                             </property>
                             <property name="maximum">
-                             <number>9</number>
+                             <number>15</number>
                             </property>
                             <property name="value">
                              <number>4</number>
@@ -2411,19 +2411,19 @@ p, li { white-space: pre-wrap; }
                          <property name="selectionMode">
                           <enum>QAbstractItemView::NoSelection</enum>
                          </property>
-                         <attribute name="horizontalHeaderDefaultSectionSize">
-                          <number>30</number>
-                         </attribute>
                          <attribute name="horizontalHeaderMinimumSectionSize">
                           <number>20</number>
+                         </attribute>
+                         <attribute name="horizontalHeaderDefaultSectionSize">
+                          <number>30</number>
                          </attribute>
                          <attribute name="horizontalHeaderStretchLastSection">
                           <bool>true</bool>
                          </attribute>
-                         <attribute name="verticalHeaderDefaultSectionSize">
+                         <attribute name="verticalHeaderMinimumSectionSize">
                           <number>22</number>
                          </attribute>
-                         <attribute name="verticalHeaderMinimumSectionSize">
+                         <attribute name="verticalHeaderDefaultSectionSize">
                           <number>22</number>
                          </attribute>
                          <row>
@@ -2684,8 +2684,8 @@ p, li { white-space: pre-wrap; }
                        <rect>
                         <x>0</x>
                         <y>0</y>
-                        <width>252</width>
-                        <height>170</height>
+                        <width>223</width>
+                        <height>144</height>
                        </rect>
                       </property>
                       <attribute name="label">

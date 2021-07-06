@@ -7,7 +7,7 @@ import os, sys, platform, pathlib, shutil, configparser, re, csv
 from copy import deepcopy
 from dateutil.parser import parse
 from scipy import integrate      # used to integrate weights numerically
-from scipy.signal import savgol_filter
+from scipy.interpolate import CubicSpline
 from qtpy import QtCore
 
 from calculate.convert_units import OoM, RoundToSigFigs
@@ -826,13 +826,31 @@ class series:
 
             return C
 
+        t = signal[:,0]
+        obs = signal[:,1]
+
         lvls = self.shock[self.idx][self.shock_idx]['wavelet_lvls']
 
-        C = calculate_C(signal)
-        signal = np.sign(signal)*np.log10(1 + np.abs(signal/C))      # apply bisymlog prior to smoothing
-        signal = dual_tree_complex_wavelet_filter(signal, lvls=lvls) # smooth transformed data
+        C = calculate_C(obs)
 
-        return np.sign(signal)*C*(np.power(10, np.abs(signal)) - 1)  # inverse transform back to original scale
+        # if data is not uniformly sampled, resample it
+        dt = np.diff(t)
+        min_dt = np.min(dt)
+        max_dt = np.max(dt)
+        if not np.isclose(min_dt, max_dt):
+            f_interp = CubicSpline(t.flatten(), obs.flatten())
+
+            N = np.ceil((np.max(t) - np.min(t))/min_dt)
+            t = np.linspace(np.min(t), np.max(t), int(N))
+            obs = f_interp(t).flatten()
+
+        obs = np.sign(obs)*np.log10(1 + np.abs(obs/C))      # apply bisymlog prior to smoothing
+        obs = dual_tree_complex_wavelet_filter(obs, lvls=lvls) # smooth transformed data
+        obs = np.sign(obs)*C*(np.power(10, np.abs(obs)) - 1)  # inverse transform back to original scale
+
+        signal = np.array([t, obs])
+
+        return signal.T
 
     def set(self, key, val=[], **kwargs):
         parent = self.parent
@@ -863,8 +881,10 @@ class series:
                 return
             
             shock['wavelet_lvls'] = lvls
-            shock['exp_data_smoothed'] = shock['exp_data'].copy()
-            shock['exp_data_smoothed'][:,1] = self.smoothed_data(shock['exp_data_smoothed'][:,1])
+            if lvls == 1:
+                shock['exp_data_smoothed'] = shock['exp_data'].copy()
+            else:
+                shock['exp_data_smoothed'] = self.smoothed_data(shock['exp_data'].copy())
 
         elif key == 'series_name':          # being called many times when weights changing, don't know why yet
             self.name[self.idx] = val
